@@ -1,0 +1,8 @@
+{
+  "game_type": "tic-tac-toe",
+  "title": "Tic-Tac-Toe",
+  "description": "Classic 3x3. Seat 0 is X, seat 1 is O. First to a line wins.",
+  "author": "your-turn-games",
+  "min_players": 2,
+  "max_players": 2
+}
