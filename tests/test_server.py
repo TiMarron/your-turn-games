@@ -79,3 +79,12 @@ def test_actions_endpoint(base_url):
 def test_cors_header_present(base_url):
     _, _, headers = _req("POST", f"{base_url}/api/games/LOCAL/match-token?seat=0")
     assert headers.get("Access-Control-Allow-Origin") == "*"
+
+
+def test_play_page_has_sandboxed_iframe(base_url):
+    import urllib.request
+    with urllib.request.urlopen(f"{base_url}/play?seat=0") as r:
+        html = r.read().decode()
+    assert 'sandbox="allow-scripts"' in html
+    assert "/client/index.html" in html
+    assert "seat0" in html  # the seat's match token is embedded for init
