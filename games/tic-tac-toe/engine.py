@@ -40,7 +40,7 @@ def apply_action(state, player, action_type, data):
     if action_type != "place":
         raise ValueError(f"unknown action: {action_type}")
     cell = data.get("cell")
-    if not isinstance(cell, int) or not (0 <= cell < 9):
+    if not isinstance(cell, int) or isinstance(cell, bool) or not (0 <= cell < 9):
         raise ValueError("invalid cell")
     if state["board"][cell] is not None:
         raise ValueError("cell already taken")
@@ -53,9 +53,13 @@ def apply_action(state, player, action_type, data):
 
     w = _winner(board)
     if w is not None:
-        s["phase"] = "finished"; s["winner"] = w; s["current_player"] = -1
-    elif all(v is not None for v in board):
-        s["phase"] = "finished"; s["winner"] = None; s["current_player"] = -1  # draw
+        s["phase"] = "finished"
+        s["winner"] = w
+        s["current_player"] = -1
+    elif all(v is not None for v in board):  # board full, no line -> draw
+        s["phase"] = "finished"
+        s["winner"] = None
+        s["current_player"] = -1
     else:
         s["current_player"] = 1 - player
     return s
@@ -65,5 +69,5 @@ def snapshot(state):
     return {
         "phase": state["phase"], "winner": state["winner"],
         "move_number": state["move_number"], "current_player": state["current_player"],
-        "board": state["board"],
+        "board": list(state["board"]),
     }

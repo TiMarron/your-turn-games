@@ -58,3 +58,21 @@ def test_legal_actions_lists_empty_cells_for_current_player_only():
     acts = m.legal_actions(0)
     assert acts == {"place": [{"cell": i} for i in range(9)]}
     assert m.legal_actions(1) == {}
+
+
+def test_bool_cell_rejected():
+    m = FakeMatch(ENGINE)
+    with pytest.raises(ReducerError):
+        m.apply(0, "place", {"cell": True})
+
+
+def test_unknown_action_rejected():
+    m = FakeMatch(ENGINE)
+    with pytest.raises(ReducerError):
+        m.apply(0, "spin", {})
+
+
+def test_out_of_range_cell_rejected():
+    m = FakeMatch(ENGINE)
+    with pytest.raises(ReducerError):
+        m.apply(0, "place", {"cell": 9})
