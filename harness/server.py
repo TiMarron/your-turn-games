@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -34,13 +35,15 @@ class Harness:
     metadata: dict
     client_dir: Path
     match: FakeMatch = field(init=False)
+    lock: threading.Lock = field(default_factory=threading.Lock, init=False)
 
     def __post_init__(self):
         self.client_dir = Path(self.client_dir)
         self.match = FakeMatch(self.source, self.metadata.get("max_players", 2))
 
     def reset(self):
-        self.match = FakeMatch(self.source, self.metadata.get("max_players", 2))
+        with self.lock:
+            self.match = FakeMatch(self.source, self.metadata.get("max_players", 2))
 
 
 def _seat_from_token(token: str | None) -> int | None:
@@ -91,7 +94,8 @@ def make_handler(harness: Harness):
                 return {}
 
         def _snapshot_for(self, seat: int | None) -> dict:
-            snap = harness.match.snapshot()
+            with harness.lock:
+                snap = harness.match.snapshot()
             snap["room_code"] = ROOM
             snap["your_seat"] = seat
             snap["engine_version"] = f"{harness.metadata.get('game_type', 'game')}@dev"
@@ -126,7 +130,11 @@ def make_handler(harness: Harness):
                 return
 
             if path == "/play":
-                seat = int((qs.get("seat", ["0"])[0]))
+                try:
+                    seat = int(qs.get("seat", ["0"])[0])
+                except ValueError:
+                    self._json(400, {"detail": "invalid seat"})
+                    return
                 self._html(200, host_page_html(harness.metadata.get("title", "game"), seat, ROOM))
                 return
 
@@ -140,7 +148,9 @@ def make_handler(harness: Harness):
 
             if re.fullmatch(r"/api/games/([^/]+)/actions", path):
                 seat = _seat_from_token(self._token())
-                self._json(200, harness.match.legal_actions(seat if seat is not None else 0))
+                with harness.lock:
+                    actions = harness.match.legal_actions(seat if seat is not None else 0)
+                self._json(200, actions)
                 return
 
             self._json(404, {"detail": "not found"})
@@ -161,7 +171,8 @@ def make_handler(harness: Harness):
                     return
                 body = self._body()
                 try:
-                    harness.match.apply(seat, body.get("type", ""), body.get("data", {}))
+                    with harness.lock:
+                        harness.match.apply(seat, body.get("type", ""), body.get("data", {}))
                 except ReducerError as exc:
                     self._json(400, {"detail": str(exc)})
                     return
@@ -174,7 +185,7 @@ def make_handler(harness: Harness):
             rel = rel or "index.html"
             root = harness.client_dir.resolve()
             target = (root / rel).resolve()
-            if not str(target).startswith(str(root)):
+            if not target.is_relative_to(root):   # correct on Windows drive-casing too
                 self._json(403, {"detail": "forbidden"})
                 return
             if not target.is_file():
