@@ -5,14 +5,16 @@ with the seat's stub match token (targetOrigin '*'), and accepts the client's
 postMessages only from that iframe (origin 'null').
 """
 from __future__ import annotations
+import html
 
 
 def host_page_html(title: str, seat: int, room: str) -> str:
+    safe_title = html.escape(title)
     token = f"seat{seat}"
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title} — seat {seat}</title>
+<title>{safe_title} — seat {seat}</title>
 <style>
   body {{ font-family: system-ui, sans-serif; margin: 0; }}
   .bar {{ padding: 6px 12px; background: #eef; border-bottom: 1px solid #ccd;
@@ -21,7 +23,7 @@ def host_page_html(title: str, seat: int, room: str) -> str:
   #ended {{ padding: 8px 12px; font-weight: 600; }}
 </style></head>
 <body>
-  <div class="bar">Harness — {title}, seat <b>{seat}</b> (token <code>{token}</code>).
+  <div class="bar">Harness — {safe_title}, seat <b>{seat}</b> (token <code>{token}</code>).
     This is the local dev shell; the game runs in a sandboxed iframe.</div>
   <div id="ended"></div>
   <iframe id="game" sandbox="allow-scripts" src="/client/index.html"></iframe>
