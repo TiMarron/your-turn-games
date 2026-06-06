@@ -87,7 +87,11 @@ def run(source: str, fn: str, args: list, timeout: float = 5.0) -> Any:
 
     if resp.get("ok"):
         return resp["result"]
-    etype, msg = resp.get("error_type"), resp.get("message", "unknown error")
+    etype = resp.get("error_type")
+    msg = resp.get("message", "unknown error")
+    err = proc.stderr.strip()
+    if err:  # surface the author's own traceback/prints for local debugging
+        msg = f"{msg}\n--- reducer stderr ---\n{err[:500]}"
     if etype == "reducer":
         raise ReducerError(msg)
     if etype == "missing":

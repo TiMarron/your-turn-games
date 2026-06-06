@@ -1,6 +1,6 @@
 import pytest
 
-from harness.sandbox_runner import run, ReducerError, ReducerMissing
+from harness.sandbox_runner import run, ReducerError, ReducerMissing, RunnerError
 from tests.conftest import TURN_REDUCER
 
 
@@ -26,3 +26,8 @@ def test_reducer_exception_maps_to_reducer_error():
 def test_missing_function_maps_to_reducer_missing():
     with pytest.raises(ReducerMissing):
         run("x = 1", "new_game", [{}])
+
+
+def test_syntax_error_in_source_maps_to_runner_error():
+    with pytest.raises(RunnerError):
+        run("def new_game(config)\n    return {}", "new_game", [{}])  # missing colon
