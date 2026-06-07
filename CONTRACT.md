@@ -58,6 +58,27 @@ fields; **enforcing** "not your turn" is the reducer's job (raise in
 }
 ```
 
+If your client needs a build step (a bundler, etc.), add an optional `"build"`
+object naming the command and its output directory:
+
+```json
+{
+  "game_type": "chess",
+  "title": "Chess",
+  "description": "...",
+  "author": "you",
+  "min_players": 2,
+  "max_players": 2,
+  "build": { "command": "npm ci && npm run build", "output": "dist" }
+}
+```
+
+- **No `build` key** ⇒ the client is static; the `client/` directory is shipped
+  as-is (the tic-tac-toe reference works this way).
+- **With `build`** ⇒ CI and the platform run `command` in your game directory and
+  ship the `output` directory as the client bundle. The command must run in a
+  clean checkout with no network access to your machine.
+
 ## Client protocol
 
 The client runs in an iframe and communicates two ways.
