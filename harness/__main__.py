@@ -17,6 +17,8 @@ def main(argv=None) -> int:
     parser.add_argument("--game", required=True, help="path to a game dir (engine.py, game.json, client/)")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--validate", action="store_true",
+                        help="validate the reducer and exit (non-zero on problems)")
     args = parser.parse_args(argv)
 
     game_dir = Path(args.game).resolve()
@@ -30,6 +32,18 @@ def main(argv=None) -> int:
 
     source = engine_file.read_text(encoding="utf-8")
     metadata = json.loads(meta_file.read_text(encoding="utf-8"))
+
+    if args.validate:
+        from harness.validate import validate
+        problems = validate(source)
+        if problems:
+            print("VALIDATION FAILED:", file=sys.stderr)
+            for p in problems:
+                print(f"  - {p}", file=sys.stderr)
+            return 1
+        print(f"OK: {metadata.get('title', game_dir.name)} reducer is contract-valid")
+        return 0
+
     harness = Harness(source=source, metadata=metadata, client_dir=client_dir)
     httpd = serve(harness, host=args.host, port=args.port)
     base = f"http://{args.host}:{args.port}"
