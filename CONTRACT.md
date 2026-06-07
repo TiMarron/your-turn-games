@@ -81,6 +81,11 @@ All requests send header `Authorization: Bearer <token>`.
 | GET  | `{api_base}/api/games/{room}/actions` | `legal_actions(state, your_seat)` |
 | POST | `{api_base}/api/games/{room}/action`  | body `{"type": <action_type>, "data": {...}}` → new snapshot (HTTP 400 if the reducer rejects) |
 
+> The platform injects a few fields into the state response on top of your
+> `snapshot()`: `your_seat`, `players`, `room_code`, `engine_version`, and (for
+> external-authored games) an `external_client` block. Your client may read them
+> but your reducer never produces them.
+
 A production client should also subscribe to `GET {api_base}/api/ws/{room}?token=<token>`
 for live opponent moves; the example clients in this repo poll only and are kept
 minimal.

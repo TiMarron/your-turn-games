@@ -27,6 +27,8 @@ Follow [CONTRACT.md](CONTRACT.md) exactly. Then verify locally:
 `games/coin/engine.py` — two players alternate; whoever takes the last of 3 coins
 loses:
 
+(The `games/coin/` directory is illustrative — it is not shipped in this repo. Create it yourself to try the example, or just read it.)
+
 ```python
 def new_game(config):
     return {"phase": "playing", "winner": None, "move_number": 0,

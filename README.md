@@ -31,6 +31,8 @@ cp -r template games/my-game
 python -m harness --game games/my-game
 ```
 
+On Windows use `xcopy /E /I template games\my-game` (or `Copy-Item -Recurse template games/my-game` in PowerShell).
+
 ## Run the harness tests (contributors)
 
 ```bash
