@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  harness-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run harness tests
+        run: |
+          python -m pip install --upgrade pip pytest
+          python -m pytest -q
+
+  validate-games:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Validate reducers and build clients
+        run: |
+          set -e
+          for dir in games/*/; do
+            [ -f "$dir/game.json" ] || continue
+            echo "=== $dir ==="
+            python -m harness --validate --game "$dir"
+            cmd=$(python -c "import json; print(json.load(open('$dir/game.json')).get('build',{}).get('command',''))")
+            if [ -n "$cmd" ]; then
+              out=$(python -c "import json; print(json.load(open('$dir/game.json'))['build']['output'])")
+              echo "-> building client: $cmd"
+              ( cd "$dir" && eval "$cmd" )
+              [ -d "$dir/$out" ] || { echo "build output '$out' missing"; exit 1; }
+            else
+              [ -f "$dir/client/index.html" ] || { echo "static client/index.html missing"; exit 1; }
+            fi
+          done
