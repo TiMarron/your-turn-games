@@ -1,0 +1,8 @@
+{
+  "game_type": "my-game",
+  "title": "My Game",
+  "description": "Describe your game here.",
+  "author": "your-name",
+  "min_players": 2,
+  "max_players": 2
+}
