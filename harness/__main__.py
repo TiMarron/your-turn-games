@@ -25,7 +25,8 @@ def main(argv=None) -> int:
     engine_file = game_dir / "engine.py"
     meta_file = game_dir / "game.json"
     client_dir = game_dir / "client"
-    for p in (engine_file, meta_file, client_dir):
+    required = (engine_file, meta_file) if args.validate else (engine_file, meta_file, client_dir)
+    for p in required:
         if not p.exists():
             print(f"error: missing {p}", file=sys.stderr)
             return 2

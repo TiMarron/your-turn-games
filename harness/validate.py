@@ -51,9 +51,14 @@ def validate(source: str) -> list[str]:
     except (ReducerError, RunnerError) as exc:
         problems.append(f"snapshot(state) failed: {exc}")
 
-    seat = state.get("current_player", 0)
-    if seat == -1:
-        seat = 0
+    # Probe seat: prefer players_to_move (simultaneous/N-player), else current_player.
+    if "players_to_move" in state:
+        ptm = state["players_to_move"]
+        seat = ptm[0] if ptm else 0
+    else:
+        seat = state.get("current_player", 0)
+        if seat == -1:
+            seat = 0
     try:
         actions = run(source, "legal_actions", [state, seat])
     except ReducerMissing:
@@ -67,24 +72,37 @@ def validate(source: str) -> list[str]:
         )
         return problems
 
-    action_type = next(iter(actions))
-    entry = actions[action_type]
-    if isinstance(entry, list) and entry and isinstance(entry[0], dict):
-        data = entry[0]
-    elif isinstance(entry, dict):
-        data = entry
-    else:
-        data = {}
-    try:
-        run(source, "apply_action", [state, seat, action_type, data])
-    except ReducerMissing:
-        problems.append("reducer does not define apply_action(state, player, action_type, data)")
-    except (ReducerError, RunnerError) as exc:
-        problems.append(
-            f"apply_action rejected its own offered action {action_type!r} "
-            f"(data={data!r}): {exc} — keys of legal_actions() must be action_types "
-            "that apply_action() accepts"
-        )
+    # A reducer is valid if at least one offered action round-trips through
+    # apply_action. (Some action_types are conditionally legal; requiring ALL to
+    # succeed would false-positive on context-dependent moves.)
+    last_error = None
+    accepted = False
+    for action_type, entry in actions.items():
+        if isinstance(entry, list) and entry and isinstance(entry[0], dict):
+            data = entry[0]
+        elif isinstance(entry, dict):
+            data = entry
+        else:
+            data = {}
+        try:
+            run(source, "apply_action", [state, seat, action_type, data])
+            accepted = True
+            break
+        except ReducerMissing:
+            problems.append(
+                "reducer does not define apply_action(state, player, action_type, data)"
+            )
+            return problems
+        except (ReducerError, RunnerError) as exc:
+            last_error = (action_type, data, exc)
+    if not accepted:
+        if last_error is not None:
+            at, data, exc = last_error
+            problems.append(
+                f"apply_action rejected every offered action (e.g. {at!r}, "
+                f"data={data!r}): {exc} — keys of legal_actions() must be action_types "
+                "that apply_action() accepts"
+            )
     return problems
 
 
