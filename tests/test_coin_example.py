@@ -36,3 +36,27 @@ def test_coin_game_json_has_build_manifest():
     assert META["game_type"] == "coin"
     assert META["build"]["output"] == "client/dist"
     assert "npm" in META["build"]["command"]
+
+
+def test_coin_client_uses_vite_vue_and_sdk():
+    client = COIN / "client"
+    pkg = json.loads((client / "package.json").read_text(encoding="utf-8"))
+    assert "vue" in pkg["dependencies"]
+    assert "vite" in pkg["devDependencies"]
+    assert pkg["scripts"]["build"] == "vite build"
+
+    vite_cfg = (client / "vite.config.ts").read_text(encoding="utf-8")
+    assert 'base: "./"' in vite_cfg
+
+    main_ts = (client / "src" / "main.ts").read_text(encoding="utf-8")
+    assert 'from "./sdk.js"' in main_ts
+    assert "connect({ onState" in main_ts
+
+    app_vue = (client / "src" / "App.vue").read_text(encoding="utf-8")
+    assert 'sendAction("take"' in app_vue
+
+
+def test_coin_client_sdk_copy_matches_canonical():
+    canonical = (ROOT / "sdk" / "client.js").read_text(encoding="utf-8")
+    copy = (COIN / "client" / "src" / "sdk.js").read_text(encoding="utf-8")
+    assert copy == canonical, "games/coin/client/src/sdk.js is out of sync with sdk/client.js"
