@@ -21,14 +21,14 @@ def main(argv=None) -> int:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--validate", action="store_true",
                         help="validate the reducer and exit (non-zero on problems)")
+    parser.add_argument("--no-build", action="store_true",
+                        help="serve the existing build output without rebuilding")
     args = parser.parse_args(argv)
 
     game_dir = Path(args.game).resolve()
     engine_file = game_dir / "engine.py"
     meta_file = game_dir / "game.json"
-    client_dir = game_dir / "client"
-    required = (engine_file, meta_file) if args.validate else (engine_file, meta_file, client_dir)
-    for p in required:
+    for p in (engine_file, meta_file):
         if not p.exists():
             print(f"error: missing {p}", file=sys.stderr)
             return 2
@@ -47,6 +47,12 @@ def main(argv=None) -> int:
         print(f"OK: {metadata.get('title', game_dir.name)} reducer is contract-valid")
         return 0
 
+    from harness.build import build_client
+    try:
+        client_dir = build_client(game_dir, metadata, rebuild=not args.no_build)
+    except Exception as exc:
+        print(f"error: client build failed: {exc}", file=sys.stderr)
+        return 2
     harness = Harness(source=source, metadata=metadata, client_dir=client_dir)
     base = f"http://{args.host}:{args.port}"
     n = metadata.get("max_players", 2)
