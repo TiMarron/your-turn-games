@@ -26,13 +26,19 @@ Follow [CONTRACT.md](CONTRACT.md) exactly. Then verify locally:
   own polling/WebSocket code. `onState(snapshot)` fires on every move (yours and
   the opponent's) — render there. See `games/tic-tac-toe/client/` for a complete
   example.
+- A framework client (Vite/Vue/React/…) works the same way: build to static
+  files, declare the build in `game.json` (`build.command` + `build.output`), and
+  copy `sdk/client.js` into your source. See `games/coin/`.
 
 ## Worked example (complete, runnable)
 
 `games/coin/engine.py` — two players alternate; whoever takes the last of 3 coins
 loses:
 
-(The `games/coin/` directory is illustrative — it is not shipped in this repo. Create it yourself to try the example, or just read it.)
+A complete, runnable version of this game (with a **Vite + Vue** client that uses
+the SDK) ships in `games/coin/` — copy it as a starting point for a framework
+client. Run it with `python -m harness --game games/coin` (the harness builds the
+Vue client per `game.json`'s `build` manifest).
 
 ```python
 def new_game(config):

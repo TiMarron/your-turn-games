@@ -75,9 +75,11 @@ object naming the command and its output directory:
 
 - **No `build` key** ⇒ the client is static; the `client/` directory is shipped
   as-is (the tic-tac-toe reference works this way).
-- **With `build`** ⇒ CI and the platform run `command` in your game directory and
-  ship the `output` directory as the client bundle. The command must run in a
-  clean checkout with no network access to your machine.
+- **With `build`** ⇒ the dev harness, CI, and the platform run `command` in your
+  game directory and serve the `output` directory as the client bundle. Set your
+  bundler's base path to relative (e.g. Vite `base: "./"`) so assets resolve when
+  the bundle is served from a sub-path and inside the sandboxed iframe. See
+  `games/coin/` for a complete Vite + Vue example.
 
 ## Client protocol
 
