@@ -95,6 +95,8 @@ async def test_static_client_served(client):
     r = await client.get("/client/index.html")
     assert r.status == 200
     assert "hi" in await r.text()
+    # no-store so switching games never serves a stale cached client
+    assert r.headers.get("Cache-Control") == "no-store"
 
 
 async def test_ws_initial_state_and_live_broadcast(client):

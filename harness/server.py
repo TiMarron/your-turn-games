@@ -153,7 +153,9 @@ def make_app(harness: Harness) -> web.Application:
             return web.json_response({"detail": "forbidden"}, status=403)
         if not target.is_file():
             return web.json_response({"detail": "no such file"}, status=404)
-        return web.FileResponse(target)
+        # no-store: every game serves its client at the same /client/ URL, so
+        # without this the browser serves a stale client when you switch games.
+        return web.FileResponse(target, headers={"Cache-Control": "no-store"})
 
     async def websocket(request):
         seat = _seat_from_token(request.query.get("token"))
