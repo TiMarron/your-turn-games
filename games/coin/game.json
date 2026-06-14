@@ -1,0 +1,9 @@
+{
+  "game_type": "coin",
+  "title": "Last Coin Loses",
+  "description": "Take 1-2 coins from the pile of 3; taking the last coin loses.",
+  "author": "your-turn-games",
+  "min_players": 2,
+  "max_players": 2,
+  "build": { "command": "npm --prefix client install && npm --prefix client run build", "output": "client/dist" }
+}
