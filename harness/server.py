@@ -85,7 +85,7 @@ async def _broadcast(harness: Harness, snap: dict) -> None:
     for ws, seat in list(harness.connections.items()):
         try:
             await ws.send_json({"type": "game_state", **base, "your_seat": seat})
-        except ConnectionError:
+        except Exception:   # drop any socket that fails to send (dead/closing)
             harness.connections.pop(ws, None)
 
 
