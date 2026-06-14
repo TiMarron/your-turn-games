@@ -21,6 +21,11 @@ Follow [CONTRACT.md](CONTRACT.md) exactly. Then verify locally:
   bad payload). Returning an unchanged state is a bug.
 - Always set `phase`, `winner`, `move_number`, `current_player` in both `state`
   and `snapshot()`. Set `current_player = -1` when the game is finished.
+- For the client, **copy `sdk/client.js`** into your bundle and use
+  `connect({ onState })` + `game.sendAction(type, data)` instead of writing your
+  own polling/WebSocket code. `onState(snapshot)` fires on every move (yours and
+  the opponent's) — render there. See `games/tic-tac-toe/client/` for a complete
+  example.
 
 ## Worked example (complete, runnable)
 

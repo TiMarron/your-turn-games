@@ -107,9 +107,29 @@ All requests send header `Authorization: Bearer <token>`.
 > external-authored games) an `external_client` block. Your client may read them
 > but your reducer never produces them.
 
-A production client should also subscribe to `GET {api_base}/api/ws/{room}?token=<token>`
-for live opponent moves; the example clients in this repo poll only and are kept
-minimal.
+### Live updates (WebSocket) — handled by the SDK
+
+You do not poll. Copy `sdk/client.js` into your client bundle and use it:
+
+```html
+<script type="module">
+  import { connect } from "./sdk.js";
+  function render(snap) { /* draw snap; snap.your_seat / snap.current_player */ }
+  let game = null;
+  connect({ onState: render }).then((g) => { game = g; });
+  // send a move:  game.sendAction("place", { cell: 4 })
+</script>
+```
+
+- `connect({ onState })` does the `ready`→`init` handshake, opens a WebSocket to
+  `{api_base}/api/ws/{room}?token=…`, and calls `onState(snapshot)` on the initial
+  state **and every opponent move** — no page refresh.
+- `game.sendAction(type, data)` sends your move over `POST /action`; the resulting
+  state comes back through `onState` (via the WebSocket broadcast), so render only
+  in `onState`.
+- The SDK notifies the host with `game_ended` when `phase` becomes `"finished"`.
+  The same `sdk.js` runs unchanged in the dev harness and on the platform (both
+  serve the WebSocket at the same origin as `api_base`).
 
 ## Develop locally
 
