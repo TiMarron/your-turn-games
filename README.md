@@ -1,8 +1,9 @@
 # your-turn-games
 
 Author games for the **«Твой ход!»** platform: a Python **reducer** + a static
-**client**, developed and tested fully offline with a stdlib-only dev harness.
-No build step, no dependencies to *run* the harness.
+**client**, developed and tested fully offline with a local dev harness.
+No build step; one dependency (aiohttp) to run the harness — the game client
+itself stays dependency-free.
 
 ## Layout
 
@@ -19,6 +20,7 @@ tests/               the harness's own tests (require pytest)
 
 ```bash
 git clone <this repo> && cd your-turn-games
+pip install -r requirements.txt        # aiohttp (the dev harness server)
 python -m harness --game games/tic-tac-toe
 # open the two printed URLs (seat 0 and seat 1) in separate browser tabs and play
 ```
@@ -36,7 +38,7 @@ On Windows use `xcopy /E /I template games\my-game` (or `Copy-Item -Recurse temp
 ## Run the harness tests (contributors)
 
 ```bash
-pip install pytest
+pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
