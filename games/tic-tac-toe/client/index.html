@@ -19,76 +19,34 @@
   <div id="status">connecting…</div>
   <div id="board"></div>
 
-  <script>
-    // Tic-tac-toe client. Speaks the your-turn postMessage + HTTP protocol with
-    // the room-scoped match token, inside a sandboxed iframe (opaque origin).
-    let cfg = null;        // { token, room_code, api_base }
-    let mySeat = null;
+  <script type="module">
+    import { connect } from "./sdk.js";
+
     const MARKS = { 0: "X", 1: "O" };
-
-    // targetOrigin "*" is required from a sandboxed iframe (opaque origin can't
-    // name the parent). We only post non-secret protocol messages.
-    function send(msg) { window.parent.postMessage(JSON.stringify(msg), "*"); }
-
-    async function api(path, opts) {
-      const res = await fetch(cfg.api_base + path, {
-        ...opts,
-        headers: { "Authorization": "Bearer " + cfg.token,
-                   "Content-Type": "application/json", ...(opts && opts.headers) },
-      });
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      return res.json();
-    }
-
     const boardEl = document.getElementById("board");
     const statusEl = document.getElementById("status");
+    let game = null;   // { cfg, sendAction } once connected
 
     function render(snap) {
-      mySeat = snap.your_seat;
-      boardEl.innerHTML = "";
+      const mySeat = snap.your_seat;
       const finished = snap.phase === "finished";
       const myTurn = !finished && snap.current_player === mySeat;
+      boardEl.innerHTML = "";
       snap.board.forEach((v, i) => {
         const b = document.createElement("button");
         b.className = "cell";
         b.textContent = v === null ? "" : MARKS[v];
-        b.disabled = finished || v !== null || !myTurn;
-        b.addEventListener("click", () => place(i));
+        b.disabled = finished || v !== null || !myTurn || !game;
+        b.addEventListener("click", () => game && game.sendAction("place", { cell: i }));
         boardEl.appendChild(b);
       });
-      if (finished) {
-        statusEl.textContent = snap.winner === null
-          ? "Draw." : (snap.winner === mySeat ? "You win!" : "You lose.");
-        send({ type: "game_ended", winner_seat: snap.winner === null ? -1 : snap.winner });
-      } else {
-        statusEl.textContent = myTurn
-          ? `Your move (${MARKS[mySeat]}).` : "Opponent's move…";
-      }
+      statusEl.textContent = finished
+        ? (snap.winner === null ? "Draw." : (snap.winner === mySeat ? "You win!" : "You lose."))
+        : (myTurn ? `Your move (${MARKS[mySeat]}).` : "Opponent's move…");
     }
 
-    async function refresh() { render(await api("/api/games/" + cfg.room_code + "/state")); }
-
-    async function place(cell) {
-      try {
-        render(await api("/api/games/" + cfg.room_code + "/action", {
-          method: "POST", body: JSON.stringify({ type: "place", data: { cell } }),
-        }));
-      } catch (e) { statusEl.textContent = "error: " + e.message; }
-    }
-
-    window.addEventListener("message", async (e) => {
-      let data = e.data;
-      if (typeof data === "string") { try { data = JSON.parse(data); } catch { return; } }
-      if (!data || data.type !== "init") return;
-      cfg = { token: data.token, room_code: data.room_code, api_base: data.api_base };
-      try { await refresh(); } catch (err) { statusEl.textContent = "init error: " + err.message; }
-    });
-
-    send({ type: "ready" });
-
-    // NOTE: this client polls only after its own move; it does not subscribe to
-    // the WebSocket room, so the opponent's move is not pushed live. A production
-    // client should connect to /api/ws/{room}?token=<match token> for live updates.
+    // Live updates arrive via onState (opponent's moves included — no refresh).
+    connect({ onState: render }).then((g) => { game = g; });
   </script>
 </body>
 </html>
