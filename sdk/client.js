@@ -9,11 +9,14 @@ export function connect({ onState }) {
   // Resolves once the host sends `init`. Returns { cfg, sendAction }.
   return new Promise((resolve) => {
     let endedSent = false;
+    let initialized = false;
 
     window.addEventListener("message", (e) => {
       let d = e.data;
       if (typeof d === "string") { try { d = JSON.parse(d); } catch { return; } }
       if (!d || d.type !== "init") return;
+      if (initialized) return;   // host may send init more than once (ready + load fallback)
+      initialized = true;
 
       const cfg = { token: d.token, room_code: d.room_code, api_base: d.api_base };
 
