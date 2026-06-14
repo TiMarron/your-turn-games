@@ -95,3 +95,31 @@ async def test_static_client_served(client):
     r = await client.get("/client/index.html")
     assert r.status == 200
     assert "hi" in await r.text()
+
+
+async def test_ws_initial_state_and_live_broadcast(client):
+    t0 = (await (await client.post("/api/games/LOCAL/match-token?seat=0")).json())["token"]
+    t1 = (await (await client.post("/api/games/LOCAL/match-token?seat=1")).json())["token"]
+
+    ws0 = await client.ws_connect(f"/api/ws/LOCAL?token={t0}")
+    ws1 = await client.ws_connect(f"/api/ws/LOCAL?token={t1}")
+
+    # Each socket gets an initial game_state with its own seat.
+    init0 = await ws0.receive_json()
+    init1 = await ws1.receive_json()
+    assert init0["type"] == "game_state" and init0["your_seat"] == 0
+    assert init1["type"] == "game_state" and init1["your_seat"] == 1
+    assert init0["current_player"] == 0
+
+    # Seat 0 plays over HTTP -> BOTH sockets receive a pushed game_state.
+    await client.post("/api/games/LOCAL/action",
+                      headers={"Authorization": f"Bearer {t0}", "Content-Type": "application/json"},
+                      json={"type": "inc", "data": {}})
+    push0 = await ws0.receive_json()
+    push1 = await ws1.receive_json()
+    assert push0["type"] == "game_state" and push0["current_player"] == 1
+    assert push1["type"] == "game_state" and push1["current_player"] == 1
+    assert push0["your_seat"] == 0 and push1["your_seat"] == 1   # personalized
+
+    await ws0.close()
+    await ws1.close()
