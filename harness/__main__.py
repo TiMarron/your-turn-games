@@ -1,6 +1,7 @@
 """CLI: python -m harness --game games/tic-tac-toe [--port 8080]
 
-Loads engine.py + game.json + client/ from the game dir and serves them.
+Loads engine.py + game.json from the game dir, builds the client (per the
+game.json `build` manifest, or the static `client/` dir), and serves them.
 """
 from __future__ import annotations
 
@@ -16,7 +17,9 @@ from harness.server import Harness, make_app
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="harness", description="Run a your-turn game locally.")
-    parser.add_argument("--game", required=True, help="path to a game dir (engine.py, game.json, client/)")
+    parser.add_argument("--game", required=True,
+                        help="path to a game dir (engine.py, game.json, and a client/ dir "
+                             "or a game.json build manifest)")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--validate", action="store_true",
