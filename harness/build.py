@@ -29,6 +29,9 @@ def build_client(game_dir: Path, metadata: dict, rebuild: bool = True) -> Path:
       return its `output` dir.
     Raises ValueError on a bad/escaping manifest, FileNotFoundError if the
     resolved dir has no index.html.
+
+    SECURITY: with a `build` manifest this runs `command` UNSANDBOXED on your
+    machine. Only run the harness against game directories you trust.
     """
     game_dir = Path(game_dir)
     build = metadata.get("build")

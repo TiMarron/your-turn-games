@@ -4,8 +4,6 @@ Returns a list of human-readable problems (empty = valid). Mirrors the platform'
 own checks behaviorally (it does not import platform code)."""
 from __future__ import annotations
 
-from pathlib import Path
-
 from harness.sandbox_runner import ReducerError, ReducerMissing, RunnerError, run
 
 REQUIRED_STATE_FIELDS = ("phase", "winner", "move_number", "current_player")
@@ -104,16 +102,3 @@ def validate(source: str) -> list[str]:
                 "that apply_action() accepts"
             )
     return problems
-
-
-def build_bundle_dir(game_dir: Path, metadata: dict) -> Path:
-    """Resolve the client bundle dir from game.json's optional build manifest.
-
-    No `build` key -> the static `client/` dir IS the bundle.
-    With `build` -> returns `game_dir / build["output"]` (the caller runs the
-    build command itself before shipping)."""
-    game_dir = Path(game_dir)
-    build = metadata.get("build")
-    if not build:
-        return game_dir / "client"
-    return game_dir / build["output"]

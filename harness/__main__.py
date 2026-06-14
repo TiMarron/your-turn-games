@@ -22,7 +22,8 @@ def main(argv=None) -> int:
     parser.add_argument("--validate", action="store_true",
                         help="validate the reducer and exit (non-zero on problems)")
     parser.add_argument("--no-build", action="store_true",
-                        help="serve the existing build output without rebuilding")
+                        help="serve the existing build output without rebuilding "
+                             "(use after a build / alongside a framework watch server)")
     args = parser.parse_args(argv)
 
     game_dir = Path(args.game).resolve()
