@@ -9,7 +9,9 @@ import json
 import sys
 from pathlib import Path
 
-from harness.server import Harness, serve
+from aiohttp import web
+
+from harness.server import Harness, make_app
 
 
 def main(argv=None) -> int:
@@ -46,18 +48,13 @@ def main(argv=None) -> int:
         return 0
 
     harness = Harness(source=source, metadata=metadata, client_dir=client_dir)
-    httpd = serve(harness, host=args.host, port=args.port)
     base = f"http://{args.host}:{args.port}"
     n = metadata.get("max_players", 2)
     print(f"Serving {metadata.get('title', game_dir.name)} at {base}")
     print("Open one tab per seat:")
     for i in range(n):
         print(f"  seat {i}: {base}/play?seat={i}")
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        print("\nshutting down")
-        httpd.shutdown()
+    web.run_app(make_app(harness), host=args.host, port=args.port, print=None)
     return 0
 
 

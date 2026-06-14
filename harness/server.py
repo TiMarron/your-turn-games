@@ -1,29 +1,22 @@
-"""Stdlib HTTP server: the platform's game API, backed by one FakeMatch.
+"""Harness HTTP + WebSocket server (aiohttp): the platform's game API + live push.
 
-Routes (mirror the platform):
-  POST /api/games/{room}/match-token?seat=N -> {"token":"seatN","expires_in_minutes":30}
-  GET  /api/games/{room}/state              -> snapshot + room_code/your_seat/players
-  GET  /api/games/{room}/actions            -> legal_actions(seat)
-  POST /api/games/{room}/action             -> apply(seat, type, data) -> snapshot (400 on rule error)
-  GET  /                                     -> seat picker page
-  GET  /play?seat=N                          -> host page (sandboxed iframe)
-  GET  /client/...                           -> author's client bundle (static)
-CORS: allow any origin (dev) so the sandboxed opaque-origin iframe can call us.
-The match token is a stub `seat{N}`; the seat is read back from the bearer token.
+One origin/port, one event loop. The HTTP API mirrors the platform; the WS route
+/api/ws/{room}?token=seatN pushes {"type":"game_state",...} on connect and on
+every action (mirroring the platform's HTTP-action -> WS-broadcast). FakeMatch
+calls run in a thread executor (they spawn subprocesses) under an asyncio.Lock so
+they never block the loop. The match token is the stub `seat{N}`.
 """
 from __future__ import annotations
 
-import json
-import re
-import threading
+import asyncio
 from dataclasses import dataclass, field
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+
+from aiohttp import web
 
 from harness.fake_match import FakeMatch
-from harness.sandbox_runner import ReducerError
 from harness.host_page import host_page_html
+from harness.sandbox_runner import ReducerError
 
 ROOM = "LOCAL"
 TOKEN_TTL_MINUTES = 30
@@ -35,18 +28,15 @@ class Harness:
     metadata: dict
     client_dir: Path
     match: FakeMatch = field(init=False)
-    lock: threading.Lock = field(default_factory=threading.Lock, init=False)
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
+    connections: dict = field(default_factory=dict, init=False)  # {WebSocketResponse: seat}
 
     def __post_init__(self):
         self.client_dir = Path(self.client_dir)
         self.match = FakeMatch(self.source, self.metadata.get("max_players", 2))
 
-    def reset(self):
-        with self.lock:
-            self.match = FakeMatch(self.source, self.metadata.get("max_players", 2))
 
-
-def _seat_from_token(token: str | None) -> int | None:
+def _seat_from_token(token):
     if token and token.startswith("seat"):
         try:
             return int(token[len("seat"):])
@@ -55,157 +45,138 @@ def _seat_from_token(token: str | None) -> int | None:
     return None
 
 
-def make_handler(harness: Harness):
-    class Handler(BaseHTTPRequestHandler):
-        def _cors(self):
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+def _token(request) -> str | None:
+    auth = request.headers.get("Authorization", "")
+    return auth[len("Bearer "):] if auth.startswith("Bearer ") else None
 
-        def _json(self, status: int, payload: dict):
-            body = json.dumps(payload).encode()
-            self.send_response(status)
-            self._cors()
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
 
-        def _html(self, status: int, html: str):
-            body = html.encode()
-            self.send_response(status)
-            self._cors()
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+async def _run(harness: Harness, method: str, *args):
+    """Run a (blocking, subprocess-spawning) FakeMatch method off the event loop."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, lambda: getattr(harness.match, method)(*args))
 
-        def _token(self) -> str | None:
-            auth = self.headers.get("Authorization", "")
-            return auth[len("Bearer "):] if auth.startswith("Bearer ") else None
 
-        def _body(self) -> dict:
-            length = int(self.headers.get("Content-Length", 0) or 0)
-            if not length:
-                return {}
+def _base_state(harness: Harness, snap: dict) -> dict:
+    """Snapshot enriched with room-level fields (NOT your_seat — set per recipient)."""
+    n = harness.metadata.get("max_players", 2)
+    return {
+        **snap,
+        "room_code": ROOM,
+        "engine_version": f"{harness.metadata.get('game_type', 'game')}@dev",
+        "players": [{"seat": i, "username": f"player{i}"} for i in range(n)],
+    }
+
+
+@web.middleware
+async def _cors(request, handler):
+    if request.method == "OPTIONS":
+        resp = web.Response(status=204)
+    else:
+        resp = await handler(request)
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+    return resp
+
+
+async def _broadcast(harness: Harness, snap: dict) -> None:
+    """Push game_state to every connected socket, personalized with its seat."""
+    base = _base_state(harness, snap)
+    for ws, seat in list(harness.connections.items()):
+        try:
+            await ws.send_json({"type": "game_state", **base, "your_seat": seat})
+        except ConnectionError:
+            harness.connections.pop(ws, None)
+
+
+def make_app(harness: Harness) -> web.Application:
+    async def match_token(request):
+        try:
+            seat = int(request.query.get("seat", "0"))
+        except ValueError:
+            return web.json_response({"detail": "invalid seat"}, status=400)
+        return web.json_response({"token": f"seat{seat}", "expires_in_minutes": TOKEN_TTL_MINUTES})
+
+    async def state(request):
+        seat = _seat_from_token(_token(request))
+        async with harness.lock:
+            snap = await _run(harness, "snapshot")
+        return web.json_response({**_base_state(harness, snap), "your_seat": seat})
+
+    async def actions(request):
+        seat = _seat_from_token(_token(request))
+        async with harness.lock:
+            acts = await _run(harness, "legal_actions", seat if seat is not None else 0)
+        return web.json_response(acts)
+
+    async def action(request):
+        seat = _seat_from_token(_token(request))
+        if seat is None:
+            return web.json_response({"detail": "missing/invalid token"}, status=401)
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        async with harness.lock:
             try:
-                return json.loads(self.rfile.read(length).decode())
-            except json.JSONDecodeError:
-                return {}
+                snap = await _run(harness, "apply", seat, body.get("type", ""), body.get("data", {}))
+            except ReducerError as exc:
+                return web.json_response({"detail": str(exc)}, status=400)
+        await _broadcast(harness, snap)
+        return web.json_response({**_base_state(harness, snap), "your_seat": seat})
 
-        def _snapshot_for(self, seat: int | None) -> dict:
-            with harness.lock:
-                snap = harness.match.snapshot()
-            snap["room_code"] = ROOM
-            snap["your_seat"] = seat
-            snap["engine_version"] = f"{harness.metadata.get('game_type', 'game')}@dev"
-            snap["players"] = [
-                {"seat": i, "username": f"player{i}"}
-                for i in range(harness.metadata.get("max_players", 2))
-            ]
-            return snap
+    async def index(request):
+        n = harness.metadata.get("max_players", 2)
+        links = "".join(
+            f'<li><a href="/play?seat={i}">Open as seat {i}</a></li>' for i in range(n)
+        )
+        title = harness.metadata.get("title", "game")
+        return web.Response(
+            content_type="text/html",
+            text=f"<!doctype html><meta charset=utf-8><title>{title} — harness</title>"
+                 f"<h1>{title}</h1><p>Open one tab per seat:</p><ul>{links}</ul>",
+        )
 
-        def log_message(self, *args):
-            pass
+    async def play(request):
+        try:
+            seat = int(request.query.get("seat", "0"))
+        except ValueError:
+            return web.json_response({"detail": "invalid seat"}, status=400)
+        return web.Response(content_type="text/html",
+                            text=host_page_html(harness.metadata.get("title", "game"), seat, ROOM))
 
-        def do_OPTIONS(self):
-            self.send_response(204)
-            self._cors()
-            self.end_headers()
+    async def client_static(request):
+        rel = request.match_info.get("tail", "") or "index.html"
+        root = harness.client_dir.resolve()
+        target = (root / rel).resolve()
+        if target != root and not target.is_relative_to(root):
+            return web.json_response({"detail": "forbidden"}, status=403)
+        if not target.is_file():
+            return web.json_response({"detail": "no such file"}, status=404)
+        return web.FileResponse(target)
 
-        def do_GET(self):
-            parsed = urlparse(self.path)
-            path, qs = parsed.path, parse_qs(parsed.query)
+    async def websocket(request):
+        seat = _seat_from_token(request.query.get("token"))
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        harness.connections[ws] = seat
+        try:
+            async with harness.lock:
+                snap = await _run(harness, "snapshot")
+            await ws.send_json({"type": "game_state", **_base_state(harness, snap), "your_seat": seat})
+            async for _msg in ws:
+                pass
+        finally:
+            harness.connections.pop(ws, None)
+        return ws
 
-            if path == "/":
-                links = "".join(
-                    f'<li><a href="/play?seat={i}">Open as seat {i} '
-                    f'({"X" if i == 0 else "O"})</a></li>'
-                    for i in range(harness.metadata.get("max_players", 2))
-                )
-                self._html(200, f"<!doctype html><meta charset=utf-8>"
-                                f"<title>{harness.metadata.get('title','game')} — harness</title>"
-                                f"<h1>{harness.metadata.get('title','game')}</h1>"
-                                f"<p>Open one tab per seat:</p><ul>{links}</ul>")
-                return
-
-            if path == "/play":
-                try:
-                    seat = int(qs.get("seat", ["0"])[0])
-                except ValueError:
-                    self._json(400, {"detail": "invalid seat"})
-                    return
-                self._html(200, host_page_html(harness.metadata.get("title", "game"), seat, ROOM))
-                return
-
-            if path.startswith("/client/"):
-                self._serve_client(path[len("/client/"):])
-                return
-
-            if re.fullmatch(r"/api/games/([^/]+)/state", path):
-                self._json(200, self._snapshot_for(_seat_from_token(self._token())))
-                return
-
-            if re.fullmatch(r"/api/games/([^/]+)/actions", path):
-                seat = _seat_from_token(self._token())
-                with harness.lock:
-                    actions = harness.match.legal_actions(seat if seat is not None else 0)
-                self._json(200, actions)
-                return
-
-            self._json(404, {"detail": "not found"})
-
-        def do_POST(self):
-            parsed = urlparse(self.path)
-            path, qs = parsed.path, parse_qs(parsed.query)
-
-            if re.fullmatch(r"/api/games/([^/]+)/match-token", path):
-                seat = int(qs.get("seat", ["0"])[0])
-                self._json(200, {"token": f"seat{seat}", "expires_in_minutes": TOKEN_TTL_MINUTES})
-                return
-
-            if re.fullmatch(r"/api/games/([^/]+)/action", path):
-                seat = _seat_from_token(self._token())
-                if seat is None:
-                    self._json(401, {"detail": "missing/invalid token"})
-                    return
-                body = self._body()
-                try:
-                    with harness.lock:
-                        harness.match.apply(seat, body.get("type", ""), body.get("data", {}))
-                except ReducerError as exc:
-                    self._json(400, {"detail": str(exc)})
-                    return
-                self._json(200, self._snapshot_for(seat))
-                return
-
-            self._json(404, {"detail": "not found"})
-
-        def _serve_client(self, rel: str):
-            rel = rel or "index.html"
-            root = harness.client_dir.resolve()
-            target = (root / rel).resolve()
-            if not target.is_relative_to(root):   # correct on Windows drive-casing too
-                self._json(403, {"detail": "forbidden"})
-                return
-            if not target.is_file():
-                self._json(404, {"detail": "no such file"})
-                return
-            ctype = ("text/html; charset=utf-8" if target.suffix == ".html"
-                     else "application/javascript" if target.suffix == ".js"
-                     else "text/css" if target.suffix == ".css"
-                     else "application/octet-stream")
-            data = target.read_bytes()
-            self.send_response(200)
-            self._cors()
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-
-    return Handler
-
-
-def serve(harness: Harness, host: str = "127.0.0.1", port: int = 8080) -> ThreadingHTTPServer:
-    """Build (do not start) a ThreadingHTTPServer. Caller runs serve_forever()."""
-    return ThreadingHTTPServer((host, port), make_handler(harness))
+    app = web.Application(middlewares=[_cors])
+    app.router.add_post("/api/games/{room}/match-token", match_token)
+    app.router.add_get("/api/games/{room}/state", state)
+    app.router.add_get("/api/games/{room}/actions", actions)
+    app.router.add_post("/api/games/{room}/action", action)
+    app.router.add_get("/api/ws/{room}", websocket)
+    app.router.add_get("/", index)
+    app.router.add_get("/play", play)
+    app.router.add_get("/client/{tail:.*}", client_static)
+    return app
