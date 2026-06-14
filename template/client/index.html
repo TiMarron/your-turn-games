@@ -14,44 +14,25 @@
 <body>
   <div id="status">connecting…</div>
   <button id="go" disabled>Go</button>
-  <script>
-    // Starter client. Replace rendering + actions with your game's UI.
-    let cfg = null;
-    function send(msg) { window.parent.postMessage(JSON.stringify(msg), "*"); }
-    async function api(path, opts) {
-      const res = await fetch(cfg.api_base + path, {
-        ...opts,
-        headers: { "Authorization": "Bearer " + cfg.token,
-                   "Content-Type": "application/json", ...(opts && opts.headers) } });
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      return res.json();
-    }
+  <script type="module">
+    // Starter client. Replace rendering + the action you send with your game's.
+    import { connect } from "./sdk.js";
+
     const goBtn = document.getElementById("go");
     const statusEl = document.getElementById("status");
+    let game = null;
+
     function render(snap) {
       const finished = snap.phase === "finished";
       const myTurn = !finished && snap.current_player === snap.your_seat;
-      goBtn.disabled = !myTurn;
+      goBtn.disabled = !myTurn || !game;
       statusEl.textContent = finished
         ? (snap.winner === snap.your_seat ? "You win!" : "Game over.")
         : (myTurn ? "Your move." : "Waiting…");
-      if (finished) send({ type: "game_ended",
-                           winner_seat: snap.winner === null ? -1 : snap.winner });
     }
-    async function refresh() { render(await api("/api/games/" + cfg.room_code + "/state")); }
-    goBtn.addEventListener("click", async () => {
-      try { render(await api("/api/games/" + cfg.room_code + "/action",
-        { method: "POST", body: JSON.stringify({ type: "go", data: {} }) }));
-      } catch (e) { statusEl.textContent = "error: " + e.message; }
-    });
-    window.addEventListener("message", async (e) => {
-      let d = e.data;
-      if (typeof d === "string") { try { d = JSON.parse(d); } catch { return; } }
-      if (!d || d.type !== "init") return;
-      cfg = { token: d.token, room_code: d.room_code, api_base: d.api_base };
-      try { await refresh(); } catch (err) { statusEl.textContent = "init error: " + err.message; }
-    });
-    send({ type: "ready" });
+
+    goBtn.addEventListener("click", () => game && game.sendAction("go", {}));
+    connect({ onState: render }).then((g) => { game = g; });
   </script>
 </body>
 </html>

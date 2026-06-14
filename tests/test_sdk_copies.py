@@ -18,3 +18,9 @@ def test_tic_tac_toe_sdk_copy_matches_canonical():
     canonical = SDK.read_text(encoding="utf-8")
     copy = (ROOT / "games" / "tic-tac-toe" / "client" / "sdk.js").read_text(encoding="utf-8")
     assert copy == canonical, "games/tic-tac-toe/client/sdk.js is out of sync with sdk/client.js"
+
+
+def test_template_sdk_copy_matches_canonical():
+    canonical = SDK.read_text(encoding="utf-8")
+    copy = (ROOT / "template" / "client" / "sdk.js").read_text(encoding="utf-8")
+    assert copy == canonical, "template/client/sdk.js is out of sync with sdk/client.js"
