@@ -42,4 +42,9 @@ pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
+CI on your PR validates every reducer (sandboxed) and builds every client per
+its `game.json` build manifest, so you get a "does it build?" signal before
+review. PR workflows run with a read-only token and no secrets; what actually
+reaches the platform is gated by merge review + the platform's deploy step.
+
 See [CONTRACT.md](CONTRACT.md) and [SKILL.md](SKILL.md).

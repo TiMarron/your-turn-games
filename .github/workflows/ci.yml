@@ -5,6 +5,16 @@ on:
   push:
     branches: [main]
 
+# Fork PRs run with this read-only token and no secrets (GitHub withholds them
+# on the `pull_request` trigger), so a malicious game.json build.command can't
+# push code or exfiltrate credentials — worst case it wastes runner minutes.
+# Repo setting "Require approval for all outside collaborators" (Settings →
+# Actions → Fork pull request workflows) adds a human click before first-time
+# contributors' workflows run at all. The authoritative gate for what reaches
+# the platform is merge review + deploy_games.py on the deploy host.
+permissions:
+  contents: read
+
 jobs:
   harness-tests:
     runs-on: ubuntu-latest
@@ -28,6 +38,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      # Reducers are validated in the sandbox; client builds run the game.json
+      # build.command UNSANDBOXED on the runner. That's acceptable on PRs given
+      # the read-only token / no secrets above, and it gives contributors the
+      # "does my client even build?" signal before review instead of at deploy.
       - name: Validate reducers and build clients
         run: |
           set -e
@@ -35,13 +49,21 @@ jobs:
             [ -f "$dir/game.json" ] || continue
             echo "=== $dir ==="
             python -m harness --validate --game "$dir"
-            cmd=$(python -c "import json; print(json.load(open('$dir/game.json')).get('build',{}).get('command',''))")
-            if [ -n "$cmd" ]; then
-              out=$(python -c "import json; print(json.load(open('$dir/game.json'))['build']['output'])")
-              echo "-> building client: $cmd"
-              ( cd "$dir" && eval "$cmd" )
-              [ -d "$dir/$out" ] || { echo "build output '$out' missing"; exit 1; }
-            else
+
+            cmd=$(python -c "import json,sys; print(json.load(open(sys.argv[1])).get('build',{}).get('command',''))" "$dir/game.json")
+            if [ -z "$cmd" ]; then
+              # Static client: must ship a ready index.html.
               [ -f "$dir/client/index.html" ] || { echo "static client/index.html missing"; exit 1; }
+              continue
             fi
+
+            out=$(python -c "import json,sys; print(json.load(open(sys.argv[1]))['build']['output'])" "$dir/game.json")
+            if [ -z "$out" ]; then
+              echo "build manifest has 'command' but no 'output'"; exit 1
+            fi
+
+            echo "-> building client: $cmd"
+            ( cd "$dir" && eval "$cmd" )
+            [ -d "$dir/$out" ] || { echo "build output '$out' missing"; exit 1; }
+            [ -f "$dir/$out/index.html" ] || { echo "build output '$out/index.html' missing"; exit 1; }
           done
