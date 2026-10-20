@@ -1,0 +1,8 @@
+{
+  "game_type": "infinite-xo",
+  "title": "Infinite Tic-Tac-Toe",
+  "description": "Noughts and crosses on an endless grid. First to line up 5 (or more) in a row wins.",
+  "author": "your-turn-games",
+  "min_players": 2,
+  "max_players": 2
+}
