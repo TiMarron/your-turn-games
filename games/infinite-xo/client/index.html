@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Бесконечные крестики-нолики</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Unbounded:wght@500;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0C111B; --panel: rgba(20, 27, 41, .85); --line: rgba(255, 255, 255, .08);
+      --text: #E6EAF2; --muted: #8A94A8; --x: #FF8A3D; --o: #5DD6EC;
+      --ui: 'Manrope', system-ui, sans-serif; --num: 'Unbounded', 'Manrope', system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html, body { height: 100%; margin: 0; background: var(--bg); }
+    body { font-family: var(--ui); color: var(--text); overflow: hidden; }
+    button { font: inherit; color: inherit; }
+    button:focus-visible { outline: 2px solid var(--o); outline-offset: 2px; }
+    .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+    #app { position: relative; width: 100%; height: 100vh; min-height: 320px; overflow: hidden; }
+
+    /* --- поле --- */
+    #grid { position: absolute; inset: 0; z-index: 0;
+            background-image: linear-gradient(to right, rgba(255,255,255,.07) 1px, transparent 1px),
+                              linear-gradient(to bottom, rgba(255,255,255,.07) 1px, transparent 1px); }
+    #world { position: absolute; left: 0; top: 0; z-index: 1; transform-origin: 0 0; pointer-events: none; }
+    #vignette { position: absolute; inset: 0; z-index: 2; pointer-events: none;
+                background: radial-gradient(ellipse 70% 70% at 50% 50%, rgba(12,17,27,0) 45%, rgba(12,17,27,.85) 100%); }
+    #stage { position: absolute; inset: 0; z-index: 3; touch-action: none; cursor: grab; }
+    #stage.dragging { cursor: grabbing; }
+
+    /* --- фишки --- */
+    .mk { position: absolute; width: 56px; height: 56px; transition: opacity .3s; }
+    .mk svg { width: 56px; height: 56px; display: block; overflow: visible; fill: none; stroke-linecap: round; }
+    .mk .final { stroke-width: 5; }
+    .mk.x svg { filter: drop-shadow(0 0 7px rgba(255,138,61,.5)); }
+    .mk.x .final { stroke: var(--x); }
+    .mk.o svg { filter: drop-shadow(0 0 7px rgba(93,214,236,.5)); }
+    .mk.o .final { stroke: var(--o); }
+    .mk.win.x .final { stroke: #FFD3B4; stroke-width: 5.5; }
+    .mk.win.x svg { filter: drop-shadow(0 0 12px rgba(255,138,61,.95)); }
+    .mk.win.o .final { stroke: #9FEBF7; stroke-width: 5.5; }
+    .mk.win.o svg { filter: drop-shadow(0 0 12px rgba(93,214,236,.95)); }
+    #world.won .mk:not(.win) { opacity: .28; }
+
+    #last, #ghost { position: absolute; width: 56px; height: 56px; border-radius: 10px; }
+    #last.x { background: rgba(255,138,61,.10); box-shadow: inset 0 0 0 1px rgba(255,138,61,.45); }
+    #last.o { background: rgba(93,214,236,.10); box-shadow: inset 0 0 0 1px rgba(93,214,236,.45); }
+    #ghost.x { background: rgba(255,138,61,.06); box-shadow: inset 0 0 0 1.5px rgba(255,138,61,.55); }
+    #ghost.o { background: rgba(93,214,236,.06); box-shadow: inset 0 0 0 1.5px rgba(93,214,236,.55); }
+    #ghost svg { width: 56px; height: 56px; display: block; fill: none; stroke-width: 5; stroke-linecap: round; opacity: .35; }
+    #ghost.x svg { stroke: var(--x); } #ghost.o svg { stroke: var(--o); }
+
+    /* --- эффект крестика: огненный разрез, 600 мс --- */
+    .mk .flash { position: absolute; inset: 0; opacity: 0; animation: xflash .6s ease-out both;
+                 background: radial-gradient(circle at 50% 50%, rgba(255,138,61,.35) 0%, rgba(255,138,61,0) 60%); }
+    .mk .glow { stroke: var(--x); stroke-width: 9; filter: blur(4px); opacity: 0; }
+    .mk .glow.g1 { animation: xglow1 .6s ease-out both; }
+    .mk .glow.g2 { animation: xglow2 .6s ease-out both; }
+    .mk .core { stroke: #FFF1D6; stroke-width: 3; filter: drop-shadow(0 0 3px #FFB36B); stroke-dasharray: 100; stroke-dashoffset: 100; opacity: 0; }
+    .mk .core.c1 { animation: xcore1 .6s cubic-bezier(.2,.8,.2,1) both; }
+    .mk .core.c2 { animation: xcore2 .6s cubic-bezier(.2,.8,.2,1) both; }
+    .mk .ember { fill: #FFC46B; stroke: none; opacity: 0; transform-box: fill-box; transform-origin: center;
+                 animation: ember .45s cubic-bezier(.1,.7,.3,1) forwards; }
+    .mk .ember.e2 { animation-delay: .02s; } .mk .ember.e3 { animation-delay: .04s; }
+    .mk .ember.e4 { animation-delay: .15s; } .mk .ember.e5 { animation-delay: .17s; } .mk .ember.e6 { animation-delay: .19s; }
+    .mk.x.fresh .final { animation: xfinal .6s ease-out both; }
+    @keyframes xflash { 0% { opacity: 0 } 8% { opacity: 1 } 30% { opacity: 1 } 60%, 100% { opacity: 0 } }
+    @keyframes xglow1 { 0% { opacity: 0 } 5% { opacity: 1 } 50% { opacity: .8 } 100% { opacity: 0 } }
+    @keyframes xglow2 { 0%, 25% { opacity: 0 } 33% { opacity: 1 } 55% { opacity: .8 } 100% { opacity: 0 } }
+    @keyframes xcore1 { 0% { stroke-dashoffset: 100; opacity: 1 } 25% { stroke-dashoffset: 0; opacity: 1 } 50% { stroke-dashoffset: 0; opacity: 1 } 100% { stroke-dashoffset: 0; opacity: 0 } }
+    @keyframes xcore2 { 0%, 25% { stroke-dashoffset: 100; opacity: 1 } 50% { stroke-dashoffset: 0; opacity: 1 } 65% { stroke-dashoffset: 0; opacity: 1 } 100% { stroke-dashoffset: 0; opacity: 0 } }
+    @keyframes xfinal { 0%, 40% { opacity: 0 } 100% { opacity: 1 } }
+    @keyframes ember { 0% { opacity: 1; transform: translate(0, 0) scale(1) } 100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(.3) } }
+
+    /* --- эффект нолика: волны по воде, 550 мс --- */
+    .mk .tint { position: absolute; inset: 0; opacity: 0; animation: otint .55s ease-out both;
+                background: radial-gradient(circle at 50% 50%, rgba(93,214,236,.28) 0%, rgba(93,214,236,0) 65%); }
+    .mk .ring, .mk .splash, .mk .drop, .mk .bloom { transform-box: fill-box; transform-origin: center; opacity: 0; }
+    .mk .ring { stroke: var(--o); stroke-width: 2.5; animation: oring .38s cubic-bezier(.1,.6,.3,1) forwards; }
+    .mk .ring.r1 { --o: .7; } .mk .ring.r2 { --o: .5; animation-delay: .08s; } .mk .ring.r3 { --o: .32; animation-delay: .16s; }
+    .mk .splash { stroke: #DFF8FD; stroke-width: 1.5; animation: osplash .5s ease-out forwards; }
+    .mk .drop { fill: #DFF8FD; stroke: none; filter: drop-shadow(0 0 4px #9FEBF7); animation: odrop .3s ease-out forwards; }
+    .mk .bloom { stroke: var(--o); stroke-width: 12; filter: blur(6px); animation: obloom .55s ease-out both; }
+    .mk.o.fresh .final { stroke-dasharray: 100; transform-box: fill-box; transform-origin: center; transform: rotate(-90deg);
+                         animation: odraw .55s cubic-bezier(.3,.7,.2,1) both; }
+    @keyframes otint { 0% { opacity: 0 } 10% { opacity: 1 } 70%, 100% { opacity: 0 } }
+    @keyframes oring { 0% { opacity: var(--o); transform: scale(.6) } 100% { opacity: 0; transform: scale(4.4) } }
+    @keyframes osplash { 0% { opacity: .9; transform: scale(1) } 100% { opacity: 0; transform: scale(7) } }
+    @keyframes odrop { 0% { opacity: 0; transform: scale(0) } 30% { opacity: 1; transform: scale(1.4) } 100% { opacity: 0; transform: scale(.5) } }
+    @keyframes obloom { 0%, 50% { opacity: 0 } 65% { opacity: .7 } 100% { opacity: 0 } }
+    @keyframes odraw { 0%, 55% { stroke-dashoffset: 100 } 100% { stroke-dashoffset: 0 } }
+    @keyframes reveal { from { opacity: 0 } to { opacity: 1 } }
+
+    /* --- победная линия --- */
+    #winsvg { position: absolute; left: 0; top: 0; overflow: visible; }
+    #winsvg line { stroke-linecap: round; fill: none; stroke-dasharray: 100; stroke-dashoffset: 100; opacity: 0; }
+    #winsvg.draw line, #winsvg.drawn line { opacity: 1; }
+    #winsvg.draw line { animation: wldraw .4s cubic-bezier(.2,.8,.2,1) .15s both; }
+    #winsvg.drawn line { stroke-dashoffset: 0; }
+    #wl-glow { stroke-width: 44; filter: blur(14px); }
+    #wl-core { stroke-width: 4; }
+    #world.won-o #wl-glow { stroke: rgba(93,214,236,.35); }
+    #world.won-o #wl-core { stroke: rgba(159,235,247,.95); filter: drop-shadow(0 0 8px rgba(93,214,236,.9)); }
+    #world.won-x #wl-glow { stroke: rgba(255,138,61,.38); }
+    #world.won-x #wl-core { stroke: rgba(255,225,190,.95); filter: drop-shadow(0 0 8px rgba(255,138,61,.9)); }
+    @keyframes wldraw { from { stroke-dashoffset: 100 } to { stroke-dashoffset: 0 } }
+
+    /* --- HUD --- */
+    .panel { background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(8px); }
+    #top { position: absolute; z-index: 4; left: 0; right: 0; top: 0; display: flex; align-items: center;
+           justify-content: space-between; gap: 16px; padding: 16px 20px; pointer-events: none; }
+    #top > * { pointer-events: auto; }
+    .logo { display: flex; align-items: center; gap: 10px; font-family: var(--num); font-weight: 700; font-size: 18px; letter-spacing: .02em; }
+    .logo span { font-weight: 500; color: var(--muted); }
+    #players { display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 16px; }
+    .pl { display: flex; align-items: center; gap: 10px; padding: 8px 14px 8px 10px; border-radius: 12px; }
+    .pl svg { width: 22px; height: 22px; fill: none; stroke-width: 3; stroke-linecap: round; opacity: .6; flex-shrink: 0; }
+    .pl.x svg { stroke: var(--x); } .pl.o svg { stroke: var(--o); }
+    .pl .tx { display: flex; flex-direction: column; line-height: 1.1; }
+    .pl .nm { font-size: 14px; font-weight: 600; color: #B8C0D0; }
+    .pl .nm { display: flex; gap: .3em; max-width: 170px; }
+    .pl .nm .u { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pl .nm .me { flex-shrink: 0; }
+    .pl .sub { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+    .pl.active svg { opacity: 1; }
+    .pl.active .nm { font-weight: 700; }
+    .pl.active.x { background: rgba(255,138,61,.14); box-shadow: inset 0 0 0 1px rgba(255,138,61,.55), 0 0 18px rgba(255,138,61,.25); }
+    .pl.active.x .nm { color: #FFD3B4; } .pl.active.x .sub { color: var(--x); }
+    .pl.active.o { background: rgba(93,214,236,.14); box-shadow: inset 0 0 0 1px rgba(93,214,236,.55), 0 0 18px rgba(93,214,236,.25); }
+    .pl.active.o .nm { color: #CDF3FA; } .pl.active.o .sub { color: var(--o); }
+    .chip { display: flex; align-items: baseline; gap: 6px; padding: 10px 14px; border-radius: 12px; }
+    .chip .lbl { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+    .chip .num { font-family: var(--num); font-weight: 700; font-size: 16px; }
+
+    #bottom { position: absolute; z-index: 4; left: 0; right: 0; bottom: 0; display: flex; align-items: flex-end;
+              justify-content: space-between; gap: 16px; padding: 16px 20px; pointer-events: none; }
+    #bottom > * { pointer-events: auto; }
+    #mini { position: relative; width: 168px; height: 112px; border-radius: 12px; overflow: hidden; }
+    #mini .cap { position: absolute; left: 10px; top: 8px; font-size: 10px; font-weight: 600; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+    #minic { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .ctl { display: flex; align-items: center; gap: 8px; }
+    .zoomg { display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 14px; }
+    .zoomg button { width: 40px; height: 36px; border: 0; border-radius: 10px; background: transparent; font-size: 18px; cursor: pointer; }
+    .zoomg button:hover, .hud-btn:hover { background: rgba(255,255,255,.08); }
+    #zv { min-width: 52px; text-align: center; font-family: var(--num); font-weight: 500; font-size: 12px; color: #B8C0D0; }
+    .hud-btn { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; cursor: pointer;
+               border-radius: 12px; border: 1px solid var(--line); background: var(--panel); }
+    .hud-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+    #hint { position: absolute; z-index: 4; left: 50%; bottom: 20px; transform: translateX(-50%); max-width: calc(100% - 460px);
+            padding: 10px 16px; border-radius: 999px; background: rgba(20,27,41,.7); border: 1px solid rgba(255,255,255,.06);
+            font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+    #hint b { color: var(--text); font-weight: 700; }
+    #hint .nr { display: none; }
+
+    #toast { position: absolute; z-index: 6; left: 50%; bottom: 84px; transform: translate(-50%, 8px); padding: 10px 16px; border-radius: 12px;
+             background: rgba(20,27,41,.95); border: 1px solid rgba(255,138,61,.45); font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; }
+    #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    /* --- карточка результата --- */
+    #card { position: absolute; z-index: 5; left: 50%; bottom: 72px; transform: translateX(-50%); width: min(420px, calc(100% - 32px));
+            display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 28px 28px 24px; border-radius: 24px;
+            background: rgba(20,27,41,.92); border: 1px solid rgba(93,214,236,.35); backdrop-filter: blur(12px);
+            box-shadow: 0 24px 64px rgba(0,0,0,.5), 0 0 40px rgba(93,214,236,.18); animation: cardin .35s cubic-bezier(.2,.8,.2,1) both; }
+    #card.instant { animation: none; }
+    #card.x { border-color: rgba(255,138,61,.4); box-shadow: 0 24px 64px rgba(0,0,0,.5), 0 0 40px rgba(255,138,61,.2); }
+    @keyframes cardin { from { opacity: 0; transform: translate(-50%, 24px) } to { opacity: 1; transform: translate(-50%, 0) } }
+    .badge { display: flex; align-items: center; justify-content: center; width: 72px; height: 72px; border-radius: 50%; }
+    .badge svg { width: 36px; height: 36px; fill: none; stroke-width: 2.6; stroke-linecap: round; }
+    #card.o .badge { background: rgba(93,214,236,.12); box-shadow: inset 0 0 0 1px rgba(93,214,236,.5), 0 0 28px rgba(93,214,236,.35); }
+    #card.o .badge svg { stroke: #9FEBF7; }
+    #card.x .badge { background: rgba(255,138,61,.12); box-shadow: inset 0 0 0 1px rgba(255,138,61,.5), 0 0 28px rgba(255,138,61,.35); }
+    #card.x .badge svg { stroke: #FFD3B4; }
+    #card h1 { margin: 0; font-family: var(--num); font-weight: 700; font-size: 26px; line-height: 1.15; text-align: center; }
+    #card p { margin: 6px 0 0; font-size: 14px; color: var(--muted); text-align: center; overflow-wrap: anywhere; }
+    #card p b { color: var(--text); }
+    #card .cta { width: 100%; height: 48px; border: 0; border-radius: 14px; font-weight: 700; font-size: 15px; cursor: pointer; color: var(--bg); }
+    #card.o .cta { background: var(--o); box-shadow: 0 8px 24px rgba(93,214,236,.3); }
+    #card.x .cta { background: var(--x); box-shadow: 0 8px 24px rgba(255,138,61,.3); }
+
+    /* --- узкий iframe / телефон --- */
+    @media (max-width: 767px) {
+      #top { padding: 14px 16px; gap: 10px; }
+      .logo { gap: 6px; font-size: 16px; }
+      #players { gap: 4px; padding: 4px; border-radius: 14px; }
+      .pl { height: 40px; padding: 0 12px 0 10px; border-radius: 10px; gap: 8px; }
+      .pl svg { width: 18px; height: 18px; }
+      .pl .nm { display: none; }
+      .pl .sub { font-size: 12px; letter-spacing: .04em; }
+      .pl.active .sub { color: #FFD3B4; }
+      .pl.active.o .sub { color: #CDF3FA; }
+      .pl:not(.active) { width: 40px; padding: 0; justify-content: center; }
+      .pl:not(.active) .tx { display: none; }
+      .chip { height: 40px; padding: 0 12px; align-items: center; gap: 4px; }
+      .chip .lbl { font-size: 10px; } .chip .num { font-size: 14px; }
+      #hint { top: 72px; bottom: auto; max-width: calc(100% - 24px); padding: 7px 12px; font-size: 12px; background: rgba(20,27,41,.6); border: 0; }
+      #hint .wd { display: none; } #hint .nr { display: inline; }
+      #bottom { left: 16px; right: 16px; bottom: 20px; padding: 0 8px; height: 64px; align-items: center; justify-content: center; border-radius: 20px;
+                background: rgba(20,27,41,.9); border: 1px solid var(--line); backdrop-filter: blur(10px); box-shadow: 0 12px 32px rgba(0,0,0,.45); }
+      #mini { display: none; }
+      .ctl { gap: 6px; }
+      .zoomg { padding: 0; background: rgba(255,255,255,.04); border: 0; backdrop-filter: none; border-radius: 14px; gap: 0; }
+      .zoomg button { width: 48px; height: 48px; font-size: 20px; border-radius: 14px; }
+      #zv { min-width: 48px; }
+      .hud-btn { width: 48px; height: 48px; border: 0; border-radius: 14px; background: transparent; }
+      .hud-btn svg { width: 22px; height: 22px; }
+      #card { bottom: 104px; padding: 24px 20px 20px; }
+      #toast { bottom: 100px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .mk .fx { display: none; }
+      .mk.fresh .final { animation: reveal .12s linear both !important; stroke-dasharray: none !important; transform: none !important; }
+      #winsvg.draw line { animation: none; stroke-dashoffset: 0; }
+      #card { animation: none; }
+      .mk { transition: none; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="grid"></div>
+  <div id="world">
+    <div id="last" hidden></div>
+    <div id="ghost" hidden></div>
+    <div id="marks"></div>
+    <svg id="winsvg" width="1" height="1" aria-hidden="true">
+      <line id="wl-glow" pathLength="100" x1="0" y1="0" x2="0" y2="0"></line>
+      <line id="wl-core" pathLength="100" x1="0" y1="0" x2="0" y2="0"></line>
+    </svg>
+  </div>
+  <div id="vignette"></div>
+  <div id="stage"></div>
+
+  <header id="top">
+    <div class="logo">XO<span>∞</span></div>
+    <div id="players" class="panel">
+      <div class="pl x" id="pl0">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6 L18 18"></path><path d="M18 6 L6 18"></path></svg>
+        <div class="tx"><span class="nm"><span class="u"></span><span class="me"></span></span><span class="sub"></span></div>
+      </div>
+      <div class="pl o" id="pl1">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"></circle></svg>
+        <div class="tx"><span class="nm"><span class="u"></span><span class="me"></span></span><span class="sub"></span></div>
+      </div>
+    </div>
+    <div class="chip panel"><span class="lbl">ход</span><span class="num" id="mv">–</span></div>
+  </header>
+
+  <div id="hint"></div>
+
+  <footer id="bottom">
+    <div id="mini" class="panel" aria-hidden="true"><span class="cap">карта</span><canvas id="minic"></canvas></div>
+    <div class="ctl">
+      <div class="zoomg panel">
+        <button type="button" id="zo" aria-label="Уменьшить">−</button>
+        <div id="zv" aria-live="off">100%</div>
+        <button type="button" id="zi" aria-label="Увеличить">+</button>
+      </div>
+      <button type="button" class="hud-btn" id="ctr" aria-label="К последнему ходу">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"></circle><path d="M12 2v4"></path><path d="M12 18v4"></path><path d="M2 12h4"></path><path d="M18 12h4"></path></svg>
+      </button>
+    </div>
+  </footer>
+
+  <section id="card" hidden aria-labelledby="card-title">
+    <div class="badge" id="card-badge"></div>
+    <div>
+      <h1 id="card-title"></h1>
+      <p id="card-sub"></p>
+    </div>
+    <button type="button" class="cta" id="card-close">Посмотреть поле</button>
+  </section>
+
+  <div id="toast" role="status"></div>
+  <div id="sr" class="sr" role="status" aria-live="polite"></div>
+</div>
+
+<script type="module">
+  import { connect } from "./sdk.js";
+
+  const CELL = 56, MIN_Z = 0.5, MAX_Z = 2, HALF = CELL / 2;
+  const $ = (id) => document.getElementById(id);
+  const stage = $("stage"), grid = $("grid"), world = $("world"), marksEl = $("marks"),
+        lastEl = $("last"), ghostEl = $("ghost"), winSvg = $("winsvg"), card = $("card"),
+        minic = $("minic"), mctx = minic.getContext("2d");
+  const narrowMQ = matchMedia("(max-width: 767px)");
+  const reduceMQ = matchMedia("(prefers-reduced-motion: reduce)");
+
+  let w = 0, h = 0;
+  let zoom = 1;                         // 0.5 … 2, показывается в процентах
+  let cwx = HALF, cwy = HALF;           // центр экрана в мировых пикселях (клетка 0,0 — по центру)
+  let snap = null, game = null;
+  let hoverPx = null, hoverMouse = false, dragging = false, ghostSeat = -1;
+  let winKeys = new Set(), freshKeys = new Set(), cardTimer = 0, cardDismissed = false, flyRaf = 0, toastTimer = 0;
+  const nodes = new Map();              // "x,y" -> элемент фишки (только видимые клетки)
+
+  const scale = () => zoom * (narrowMQ.matches ? 48 / CELL : 1);
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const toCell = (px, py) => {
+    const s = scale() * CELL;
+    return [Math.floor((px - (w / 2 - cwx * scale())) / s), Math.floor((py - (h / 2 - cwy * scale())) / s)];
+  };
+  const plural = (n, a, b, c) => { const m = n % 100, d = n % 10; return m > 10 && m < 20 ? c : d === 1 ? a : d > 1 && d < 5 ? b : c; };
+  const myTurn = () => !!snap && !!game && snap.phase !== "finished" && snap.current_player === snap.your_seat;
+  const NAMES = ["Крестики", "Нолики"];
+  // Имя игрока приходит с платформы в snap.players; без него — «Игрок N».
+  const playerName = (seat) => {
+    const p = ((snap && snap.players) || []).find((q) => q.seat === seat);
+    const u = p && typeof p.username === "string" ? p.username.trim() : "";
+    return u || "Игрок " + (seat + 1);
+  };
+
+  // ---------- фишки ----------
+  function markHtml(seat, fresh) {
+    if (seat === 0) {
+      const fx = fresh ? `<div class="flash fx"></div>` : "";
+      const fxSvg = fresh ? `<g class="fx">
+        <path class="glow g1" d="M14 14 L42 42"></path><path class="glow g2" d="M42 14 L14 42"></path>
+        <path class="core c1" pathLength="100" d="M14 14 L42 42"></path><path class="core c2" pathLength="100" d="M42 14 L14 42"></path>
+        <circle class="ember e1" cx="42" cy="42" r="1.4" style="--dx:8px;--dy:6px"></circle>
+        <circle class="ember e2" cx="42" cy="42" r="1" style="--dx:10px;--dy:-3px"></circle>
+        <circle class="ember e3" cx="42" cy="42" r=".9" style="--dx:3px;--dy:10px"></circle>
+        <circle class="ember e4" cx="14" cy="42" r="1.3" style="--dx:-9px;--dy:6px"></circle>
+        <circle class="ember e5" cx="14" cy="42" r="1" style="--dx:-10px;--dy:-2px"></circle>
+        <circle class="ember e6" cx="14" cy="42" r=".9" style="--dx:-4px;--dy:10px"></circle></g>` : "";
+      return `${fx}<svg viewBox="0 0 56 56" aria-hidden="true">${fxSvg}<path class="final" d="M15 15 L41 41"></path><path class="final" d="M41 15 L15 41"></path></svg>`;
+    }
+    const fx = fresh ? `<div class="tint fx"></div>` : "";
+    const fxSvg = fresh ? `<g class="fx">
+      <circle class="ring r1" cx="28" cy="28" r="6"></circle><circle class="ring r2" cx="28" cy="28" r="6"></circle><circle class="ring r3" cx="28" cy="28" r="6"></circle>
+      <circle class="splash" cx="28" cy="28" r="3"></circle><circle class="bloom" cx="28" cy="28" r="13.5"></circle>
+      <circle class="drop" cx="28" cy="28" r="2.6"></circle></g>` : "";
+    return `${fx}<svg viewBox="0 0 56 56" aria-hidden="true">${fxSvg}<circle class="final" cx="28" cy="28" r="13.5" pathLength="100"></circle></svg>`;
+  }
+
+  function makeMark(k, x, y, seat, fresh) {
+    const d = document.createElement("div");
+    d.className = "mk " + (seat === 0 ? "x" : "o") + (fresh ? " fresh" : "") + (winKeys.has(k) ? " win" : "");
+    d.style.left = x * CELL + "px"; d.style.top = y * CELL + "px";
+    d.innerHTML = markHtml(seat, fresh);
+    d._xy = [x, y];
+    marksEl.appendChild(d);
+    if (fresh) setTimeout(() => { d.classList.remove("fresh"); d.querySelectorAll(".fx").forEach((n) => n.remove()); }, 700);
+    return d;
+  }
+
+  // Рендерим только видимые клетки плюс запас в одну клетку.
+  function syncMarks() {
+    if (!snap) return;
+    const s = scale() * CELL, X = w / 2 - cwx * scale(), Y = h / 2 - cwy * scale();
+    const x0 = Math.floor(-X / s) - 1, x1 = Math.floor((w - X) / s) + 1;
+    const y0 = Math.floor(-Y / s) - 1, y1 = Math.floor((h - Y) / s) + 1;
+    const inView = (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+    for (const [k, n] of nodes) {
+      if (!(k in snap.cells) || !inView(n._xy[0], n._xy[1])) { n.remove(); nodes.delete(k); }
+    }
+    for (const k in snap.cells) {
+      if (nodes.has(k)) continue;
+      const [x, y] = k.split(",").map(Number);
+      if (!inView(x, y)) continue;
+      nodes.set(k, makeMark(k, x, y, snap.cells[k], freshKeys.delete(k)));
+    }
+  }
+
+  // ---------- вид: перетаскивание, масштаб ----------
+  function applyView() {
+    const s = scale(), X = w / 2 - cwx * s, Y = h / 2 - cwy * s;
+    world.style.transform = `translate(${X}px, ${Y}px) scale(${s})`;
+    grid.style.backgroundSize = `${CELL * s}px ${CELL * s}px`;
+    grid.style.backgroundPosition = `${X}px ${Y}px`;
+    $("zv").textContent = Math.round(zoom * 100) + "%";
+    syncMarks(); updateGhost(); drawMini();
+  }
+
+  function zoomAt(z, px, py) {
+    const s1 = scale(), wx = cwx + (px - w / 2) / s1, wy = cwy + (py - h / 2) / s1;
+    zoom = clamp(z, MIN_Z, MAX_Z);
+    const s2 = scale();
+    cwx = wx - (px - w / 2) / s2; cwy = wy - (py - h / 2) / s2;
+    applyView();
+  }
+
+  function lastCenter() {
+    return snap && snap.last_move ? [snap.last_move[0] * CELL + HALF, snap.last_move[1] * CELL + HALF] : [HALF, HALF];
+  }
+  function flyTo(tx, ty) {
+    cancelAnimationFrame(flyRaf);
+    if (reduceMQ.matches) { cwx = tx; cwy = ty; applyView(); return; }
+    const ax = cwx, ay = cwy, t0 = performance.now();
+    const step = (t) => {
+      const k = Math.min(1, (t - t0) / 280), e = 1 - Math.pow(1 - k, 3);
+      cwx = ax + (tx - ax) * e; cwy = ay + (ty - ay) * e; applyView();
+      if (k < 1) flyRaf = requestAnimationFrame(step);
+    };
+    flyRaf = requestAnimationFrame(step);
+  }
+
+  const ptrs = new Map();
+  let drag = null, pinch = null;
+  const rel = (e) => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  const pinchState = () => {
+    const [a, b] = [...ptrs.values()];
+    return { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+  };
+
+  stage.addEventListener("pointerdown", (e) => {
+    cancelAnimationFrame(flyRaf);
+    stage.setPointerCapture(e.pointerId);
+    const p = rel(e); ptrs.set(e.pointerId, p);
+    if (ptrs.size === 1) drag = { sx: p.x, sy: p.y, cwx, cwy, moved: false, touch: e.pointerType !== "mouse" };
+    else if (ptrs.size === 2) { if (drag) drag.moved = true; pinch = { z0: zoom, d0: pinchState().d }; }
+  });
+  stage.addEventListener("pointermove", (e) => {
+    const p = rel(e);
+    hoverMouse = e.pointerType === "mouse"; hoverPx = p;
+    if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, p);
+    if (pinch && ptrs.size >= 2) {
+      const st = pinchState(); zoomAt(pinch.z0 * st.d / pinch.d0, st.mx, st.my);
+    } else if (drag) {
+      const dx = p.x - drag.sx, dy = p.y - drag.sy;
+      if (!drag.moved && Math.hypot(dx, dy) > (drag.touch ? 8 : 5)) { drag.moved = true; dragging = true; stage.classList.add("dragging"); }
+      if (drag.moved) { cwx = drag.cwx - dx / scale(); cwy = drag.cwy - dy / scale(); applyView(); return; }
+    }
+    updateGhost();
+  });
+  const endPointer = (e, cancelled) => {
+    const p = rel(e), d = drag;
+    ptrs.delete(e.pointerId);
+    if (ptrs.size < 2) pinch = null;
+    if (ptrs.size === 0) {
+      drag = null; dragging = false; stage.classList.remove("dragging");
+      if (d && !d.moved && !cancelled) tryPlace(d.sx, d.sy);
+      updateGhost();
+    }
+  };
+  stage.addEventListener("pointerup", (e) => endPointer(e, false));
+  stage.addEventListener("pointercancel", (e) => endPointer(e, true));
+  stage.addEventListener("pointerleave", () => { hoverPx = null; updateGhost(); });
+  stage.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const p = rel(e);
+    zoomAt(zoom * Math.exp(-clamp(e.deltaY, -300, 300) * 0.0015), p.x, p.y);
+  }, { passive: false });
+
+  $("zi").addEventListener("click", () => zoomAt(zoom * 1.25, w / 2, h / 2));
+  $("zo").addEventListener("click", () => zoomAt(zoom / 1.25, w / 2, h / 2));
+  $("ctr").addEventListener("click", () => { const [x, y] = lastCenter(); flyTo(x, y); });
+
+  function tryPlace(px, py) {
+    if (!myTurn()) return;
+    const [x, y] = toCell(px, py);
+    if ((x + "," + y) in snap.cells) return;
+    game.sendAction("place", { x, y }).catch(() => toast("Сюда нельзя сходить"));
+  }
+
+  function toast(msg) {
+    const t = $("toast"); t.textContent = msg; t.classList.add("show");
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+  }
+
+  // ---------- призрак хода и подсветка последнего хода ----------
+  function glyph(seat) {
+    return seat === 0
+      ? `<svg viewBox="0 0 56 56" aria-hidden="true"><path d="M15 15 L41 41"></path><path d="M41 15 L15 41"></path></svg>`
+      : `<svg viewBox="0 0 56 56" aria-hidden="true"><circle cx="28" cy="28" r="13.5"></circle></svg>`;
+  }
+  function updateGhost() {
+    if (!hoverPx || !hoverMouse || dragging || !myTurn()) { ghostEl.hidden = true; return; }
+    const [x, y] = toCell(hoverPx.x, hoverPx.y);
+    if ((x + "," + y) in snap.cells) { ghostEl.hidden = true; return; }
+    const seat = snap.your_seat;
+    if (seat !== ghostSeat) { ghostSeat = seat; ghostEl.innerHTML = glyph(seat); ghostEl.className = seat === 0 ? "x" : "o"; }
+    ghostEl.style.left = x * CELL + "px"; ghostEl.style.top = y * CELL + "px"; ghostEl.hidden = false;
+  }
+  function updateLast() {
+    if (!snap.last_move || snap.phase === "finished") { lastEl.hidden = true; return; }
+    const [x, y] = snap.last_move;
+    lastEl.className = snap.cells[x + "," + y] === 0 ? "x" : "o";
+    lastEl.style.left = x * CELL + "px"; lastEl.style.top = y * CELL + "px"; lastEl.hidden = false;
+  }
+
+  // ---------- HUD ----------
+  function updateHud() {
+    const me = snap.your_seat, finished = snap.phase === "finished";
+    for (const seat of [0, 1]) {
+      const pl = $("pl" + seat), active = finished ? snap.winner === seat : snap.current_player === seat;
+      pl.classList.toggle("active", active);
+      pl.querySelector(".nm .u").textContent = playerName(seat);
+      pl.querySelector(".nm .me").textContent = seat === me ? "· вы" : "";
+      pl.querySelector(".sub").textContent = finished ? (active ? "победа" : "поражение")
+        : active ? (seat === me ? "ваш ход" : "ходит") : "ждёт";
+    }
+    $("mv").textContent = finished ? snap.move_number : snap.move_number + 1;
+    const n = snap.win_length;
+    $("hint").innerHTML = finished
+      ? `Партия окончена · <b>${NAMES[snap.winner]} победили</b>`
+      : `<span class="wd">Собери <b>${n} в ряд</b> · тяни поле, чтобы двигаться · колесо — масштаб</span><span class="nr">${n} в ряд · тяни поле · щипок — масштаб</span>`;
+    $("sr").textContent = finished ? `${NAMES[snap.winner]} победили` : (myTurn() ? "Ваш ход" : "Ход соперника");
+  }
+
+  // ---------- победа ----------
+  function showWin(live) {
+    winKeys = new Set(snap.win_line.map(([x, y]) => x + "," + y));
+    for (const [k, n] of nodes) n.classList.toggle("win", winKeys.has(k));
+    const side = snap.winner === 0 ? "x" : "o";
+    world.classList.remove("won-x", "won-o"); world.classList.add("won", "won-" + side);
+    const a = snap.win_line[0], b = snap.win_line[snap.win_line.length - 1];
+    for (const id of ["wl-glow", "wl-core"]) {
+      const l = $(id);
+      l.setAttribute("x1", a[0] * CELL + HALF); l.setAttribute("y1", a[1] * CELL + HALF);
+      l.setAttribute("x2", b[0] * CELL + HALF); l.setAttribute("y2", b[1] * CELL + HALF);
+    }
+    winSvg.classList.remove("draw", "drawn"); void winSvg.getBoundingClientRect();
+    winSvg.classList.add(live ? "draw" : "drawn");
+    cardDismissed = false;
+    clearTimeout(cardTimer);
+    // Выигрышная линия не должна оказаться под карточкой результата: ставим её в верхнюю треть экрана.
+    const midX = (a[0] + b[0]) / 2 * CELL + HALF, midY = (a[1] + b[1]) / 2 * CELL + HALF;
+    flyTo(midX, midY + (0.14 * h) / scale());
+    if (live) cardTimer = setTimeout(() => showCard(true), 600); else showCard(false);
+  }
+  function showCard(animate) {
+    if (cardDismissed || snap.phase !== "finished") return;
+    const win = snap.winner, mine = win === snap.your_seat, len = snap.win_line.length, mv = snap.move_number;
+    card.className = (win === 0 ? "x" : "o") + (animate ? "" : " instant");
+    $("card-badge").innerHTML = win === 0
+      ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6 L18 18"></path><path d="M18 6 L6 18"></path></svg>`
+      : `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7.5"></circle></svg>`;
+    $("card-title").textContent = NAMES[win] + " победили";
+    const sub = $("card-sub");   // имя — пользовательский текст: только через textContent
+    sub.textContent = "";
+    const bold = (t) => { const b = document.createElement("b"); b.textContent = t; return b; };
+    sub.append(playerName(win) + (mine ? " (вы)" : "") + " собрал ", bold(len + " в ряд"), " за ", bold(mv + " " + plural(mv, "ход", "хода", "ходов")));
+    card.hidden = false;
+  }
+  function clearWin() {
+    clearTimeout(cardTimer); winKeys = new Set(); cardDismissed = false;
+    world.classList.remove("won", "won-x", "won-o"); winSvg.classList.remove("draw", "drawn");
+    for (const n of nodes.values()) n.classList.remove("win");
+    card.hidden = true;
+  }
+  $("card-close").addEventListener("click", () => { cardDismissed = true; card.hidden = true; });
+
+  // ---------- миникарта ----------
+  function drawMini() {
+    if (!snap || narrowMQ.matches) return;
+    const cw = 168, ch = 112, dpr = devicePixelRatio || 1;
+    if (minic.width !== cw * dpr) { minic.width = cw * dpr; minic.height = ch * dpr; }
+    mctx.setTransform(dpr, 0, 0, dpr, 0, 0); mctx.clearRect(0, 0, cw, ch);
+    const s = scale() * CELL, vw = w / s, vh = h / s, ccx = cwx / CELL, ccy = cwy / CELL;
+    let x0 = ccx - vw / 2, x1 = ccx + vw / 2, y0 = ccy - vh / 2, y1 = ccy + vh / 2;
+    const pts = [];
+    for (const k in snap.cells) {
+      const [x, y] = k.split(",").map(Number);
+      pts.push([x + .5, y + .5, snap.cells[k]]);
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x + 1); y0 = Math.min(y0, y); y1 = Math.max(y1, y + 1);
+    }
+    const bx = 10, by = 26, bw = cw - 20, bh = ch - 36;
+    const m = Math.min(bw / (x1 - x0), bh / (y1 - y0));
+    const ox = bx + (bw - (x1 - x0) * m) / 2 - x0 * m, oy = by + (bh - (y1 - y0) * m) / 2 - y0 * m;
+    for (const [x, y, seat] of pts) {
+      mctx.fillStyle = seat === 0 ? "#FF8A3D" : "#5DD6EC";
+      mctx.beginPath(); mctx.arc(ox + x * m, oy + y * m, 2.3, 0, Math.PI * 2); mctx.fill();
+    }
+    mctx.strokeStyle = "rgba(230,234,242,.35)"; mctx.lineWidth = 1;
+    mctx.beginPath(); mctx.roundRect(ox + (ccx - vw / 2) * m, oy + (ccy - vh / 2) * m, Math.max(4, vw * m), Math.max(4, vh * m), 3); mctx.stroke();
+  }
+
+  // ---------- состояние от платформы ----------
+  function onState(s) {
+    const prev = snap, first = prev === null;
+    snap = s;
+    freshKeys = new Set();
+    if (!first) for (const k in s.cells) if (!(k in prev.cells)) freshKeys.add(k);
+    if (first) { const [x, y] = lastCenter(); cwx = x; cwy = y; }
+    updateLast(); updateHud();
+    applyView();                                      // создаёт новые фишки (с эффектом для freshKeys)
+    const wasFinished = !!prev && prev.phase === "finished";
+    if (s.phase === "finished" && s.win_line) { if (!wasFinished) showWin(!first); }
+    else if (wasFinished) clearWin();
+  }
+
+  function resize() {
+    w = stage.clientWidth; h = stage.clientHeight;
+    applyView();
+  }
+  window.addEventListener("resize", resize);
+  narrowMQ.addEventListener("change", resize);
+
+  resize();
+  connect({ onState }).then((g) => { game = g; if (snap) { updateHud(); updateGhost(); } });
+</script>
+</body>
+</html>
