@@ -5,10 +5,10 @@ from harness.sandbox_runner import ReducerMissing, run
 
 
 class FakeMatch:
-    def __init__(self, source: str, n_players: int = 2):
+    def __init__(self, source: str, n_players: int = 2, config: dict | None = None):
         self.source = source
         self.n_players = n_players
-        self.state = run(source, "new_game", [{}])
+        self.state = run(source, "new_game", [config or {}])
         # initialize_for_players is optional; apply if present.
         try:
             self.state = run(source, "initialize_for_players", [self.state, n_players])
