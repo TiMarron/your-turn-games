@@ -8,6 +8,9 @@ on:
 # Fork PRs run with this read-only token and no secrets (GitHub withholds them
 # on the `pull_request` trigger), so a malicious game.json build.command can't
 # push code or exfiltrate credentials — worst case it wastes runner minutes.
+# On push to main the DEPLOY_DISPATCH_TOKEN secret exists in the workflow, but
+# GitHub only injects a secret into steps that reference it, so the unsandboxed
+# build step in validate-games never sees it — only the notify-deploy job does.
 # Repo setting "Require approval for all outside collaborators" (Settings →
 # Actions → Fork pull request workflows) adds a human click before first-time
 # contributors' workflows run at all. The authoritative gate for what reaches
@@ -70,3 +73,18 @@ jobs:
             [ -d "$dir/$out" ] || { echo "build output '$out' missing"; exit 1; }
             [ -f "$dir/$out/index.html" ] || { echo "build output '$out/index.html' missing"; exit 1; }
           done
+
+  notify-deploy:
+    needs: [harness-tests, validate-games]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      # Tells your-turn's deploy workflow a game was merged, so it delivers
+      # it without waiting for the next push to your-turn itself. The default
+      # GITHUB_TOKEN can't dispatch across repos, so this needs a PAT on
+      # TiMarron/your-turn: fine-grained with `Contents: Read and write`, or
+      # classic with the `repo` scope.
+      - name: Dispatch games-updated to your-turn
+        env:
+          GH_TOKEN: ${{ secrets.DEPLOY_DISPATCH_TOKEN }}
+        run: gh api repos/TiMarron/your-turn/dispatches -f event_type=games-updated
