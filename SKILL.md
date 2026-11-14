@@ -24,21 +24,16 @@ Follow [CONTRACT.md](CONTRACT.md) exactly. Then verify locally:
 - For the client, **copy `sdk/client.js`** into your bundle and use
   `connect({ onState })` + `game.sendAction(type, data)` instead of writing your
   own polling/WebSocket code. `onState(snapshot)` fires on every move (yours and
-  the opponent's) — render there. See `games/tic-tac-toe/client/` for a complete
+  the opponent's) — render there. See `games/infinite-xo/client/` for a complete
   example.
 - A framework client (Vite/Vue/React/…) works the same way: build to static
   files, declare the build in `game.json` (`build.command` + `build.output`), and
-  copy `sdk/client.js` into your source. See `games/coin/`.
+  copy `sdk/client.js` into your source.
 
-## Worked example (complete, runnable)
+## Worked example (minimal)
 
 `games/coin/engine.py` — two players alternate; whoever takes the last of 3 coins
-loses:
-
-A complete, runnable version of this game (with a **Vite + Vue** client that uses
-the SDK) ships in `games/coin/` — copy it as a starting point for a framework
-client. Run it with `python -m harness --game games/coin` (the harness builds the
-Vue client per `game.json`'s `build` manifest).
+loses. (For a complete, runnable reference game see `games/infinite-xo/`.)
 
 ```python
 def new_game(config):
@@ -74,9 +69,9 @@ def snapshot(state):
             "coins": state["coins"]}
 ```
 
-`games/coin/client/index.html` — minimal client (same protocol as the tic-tac-toe
-example; copy `games/tic-tac-toe/client/index.html` and adapt the rendering and
-the action you POST).
+`games/coin/client/index.html` — minimal client (same protocol as the infinite-xo
+example; copy `games/infinite-xo/client/index.html` and adapt the rendering and
+the action you send).
 
 `games/coin/game.json`:
 

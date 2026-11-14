@@ -12,7 +12,7 @@ CONTRACT.md          the game contract (read this)
 SKILL.md             authoring guide + worked example
 harness/             the local dev harness (stdlib only)
 template/            copy this to start a new game
-games/tic-tac-toe/   reference game (engine.py + client/ + game.json)
+games/infinite-xo/   reference game (engine.py + client/ + game.json)
 tests/               the harness's own tests (require pytest)
 ```
 
@@ -21,7 +21,7 @@ tests/               the harness's own tests (require pytest)
 ```bash
 git clone <this repo> && cd your-turn-games
 pip install -r requirements.txt        # aiohttp (the dev harness server)
-python -m harness --game games/tic-tac-toe
+python -m harness --game games/infinite-xo
 # open the two printed URLs (seat 0 and seat 1) in separate browser tabs and play
 ```
 
