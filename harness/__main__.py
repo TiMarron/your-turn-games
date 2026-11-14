@@ -1,4 +1,4 @@
-"""CLI: python -m harness --game games/tic-tac-toe [--port 8080]
+"""CLI: python -m harness --game games/infinite-xo [--port 8080]
 
 Loads engine.py + game.json from the game dir, builds the client (per the
 game.json `build` manifest, or the static `client/` dir), and serves them.
