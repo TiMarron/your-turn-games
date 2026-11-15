@@ -95,42 +95,87 @@ def check_pr(
     return errors, notices
 
 
+def _slug(game_dir: str, meta: dict) -> str:
+    """The portal identifies a game by game.json `game_type` (as deploy does),
+    falling back to the directory name."""
+    slug = meta.get("game_type") if isinstance(meta, dict) else None
+    return slug if isinstance(slug, str) and slug else game_dir.rstrip("/").split("/")[-1]
+
+
+def pair_by_slug(base: dict[str, dict], head: dict[str, dict], changed_dirs: set[str]) -> Changed:
+    """Pair base/head game.json by slug for the game dirs a PR touches.
+
+    `base` / `head`: {game_dir: game.json} of every game on each side. Keyed by
+    slug so a new directory that reuses an existing game_type, or a moved
+    directory, is checked against the existing game's authors; a dir whose slug
+    disappears is a removal of that slug."""
+    base_by_slug = {_slug(d, m): m for d, m in base.items()}
+    head_slugs = {_slug(d, m) for d, m in head.items()}
+    pairs: Changed = {}
+    for d in sorted(changed_dirs):
+        if d in head:
+            s = _slug(d, head[d])
+            pairs[s] = (base_by_slug.get(s), head[d])
+        if d in base:
+            old = _slug(d, base[d])
+            if old not in head_slugs:
+                pairs[old] = (base[d], None)
+    return pairs
+
+
+def duplicate_slugs(head: dict[str, dict]) -> list[str]:
+    seen: dict[str, int] = {}
+    for d, m in head.items():
+        s = _slug(d, m)
+        seen[s] = seen.get(s, 0) + 1
+    return sorted(s for s, n in seen.items() if n > 1)
+
+
 # ── git plumbing ──────────────────────────────────────────────────────────────
 
 def _git(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", *args], capture_output=True, text=True)
 
 
-def _changed_games(base_ref: str) -> list[str]:
-    out = _git("diff", "--name-only", f"{base_ref}...HEAD", "--", "games/")
+def _load(text: str) -> dict:
+    try:
+        meta = json.loads(text)
+    except ValueError:
+        return {}
+    return meta if isinstance(meta, dict) else {}
+
+
+def _changed_dirs(base_ref: str) -> set[str]:
+    # --no-renames: a moved game shows as delete + add, so both sides are checked
+    out = _git("diff", "--no-renames", "--name-only", f"{base_ref}...HEAD", "--", "games/")
     if out.returncode != 0:
         raise RuntimeError(f"git diff failed: {out.stderr.strip()}")
-    games = set()
+    dirs = set()
     for path in out.stdout.splitlines():
         parts = path.split("/")
         if len(parts) >= 3 and parts[0] == "games":
-            games.add(f"games/{parts[1]}")
-    return sorted(games)
+            dirs.add(f"games/{parts[1]}")
+    return dirs
 
 
-def _base_meta(base_ref: str, game: str) -> dict | None:
-    out = _git("show", f"{base_ref}:{game}/game.json")
+def _base_games(base_ref: str) -> dict[str, dict]:
+    out = _git("ls-tree", "-r", "--name-only", base_ref, "--", "games/")
     if out.returncode != 0:
-        return None
-    try:
-        return json.loads(out.stdout)
-    except ValueError:
-        return {}
+        raise RuntimeError(f"git ls-tree failed: {out.stderr.strip()}")
+    games = {}
+    for path in out.stdout.splitlines():
+        parts = path.split("/")
+        if len(parts) == 3 and parts[2] == "game.json":
+            shown = _git("show", f"{base_ref}:{path}")
+            games[f"games/{parts[1]}"] = _load(shown.stdout) if shown.returncode == 0 else {}
+    return games
 
 
-def _head_meta(game: str) -> dict | None:
-    path = Path(game) / "game.json"
-    if not path.is_file():
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except ValueError:
-        return {}
+def _head_games() -> dict[str, dict]:
+    return {
+        f.parent.as_posix(): _load(f.read_text(encoding="utf-8"))
+        for f in sorted(Path("games").glob("*/game.json"))
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -152,8 +197,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.base or args.pr_author:
         if not (args.base and args.pr_author):
             parser.error("--base and --pr-author go together")
-        changed = {g: (_base_meta(args.base, g), _head_meta(g)) for g in _changed_games(args.base)}
+        head = _head_games()
+        changed = pair_by_slug(_base_games(args.base), head, _changed_dirs(args.base))
         e, n = check_pr(changed, args.pr_author, args.maintainer)
+        e += [f"game_type {s!r} is used by more than one game" for s in duplicate_slugs(head)]
         errors += e
         notices += n
     if not (args.all or args.base):
