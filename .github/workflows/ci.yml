@@ -94,7 +94,17 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           OWNER: ${{ github.repository_owner }}
-        run: python -m harness.authors --base "origin/$BASE_REF" --pr-author "$PR_AUTHOR" --maintainer "$OWNER"
+        # Run the checker as it is on the BASE branch, so a PR can't weaken the
+        # check that judges it (falls back to the PR's copy only until the
+        # checker exists on the base branch).
+        run: |
+          checker="$RUNNER_TEMP/authors_check.py"
+          if git cat-file -e "origin/$BASE_REF:harness/authors.py" 2>/dev/null; then
+            git show "origin/$BASE_REF:harness/authors.py" > "$checker"
+          else
+            cp harness/authors.py "$checker"
+          fi
+          python "$checker" --base "origin/$BASE_REF" --pr-author "$PR_AUTHOR" --maintainer "$OWNER"
 
   notify-deploy:
     needs: [harness-tests, validate-games, authors]
