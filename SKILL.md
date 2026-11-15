@@ -16,6 +16,11 @@ Follow [CONTRACT.md](CONTRACT.md) exactly. Then verify locally:
   and sends actions; it must never decide legality.
 - The reducer is **pure**: no file/network/time/random-without-seed. Derive
   everything from `state` and `config`.
+- `apply_action` is **deterministic** — the platform replays stored games move
+  by move. Mid-game randomness comes from a seed kept in `state` (set it in
+  `new_game`/`initialize_for_players`), e.g.
+  `random.Random(f"{state['seed']}:{state['move_number']}")`; never put the seed
+  in `snapshot()`. `--validate` probes the first moves for this.
 - Put hidden info in `state` but **omit it from `snapshot()`**.
 - `apply_action` must **raise** for any illegal action (wrong turn, taken cell,
   bad payload). Returning an unchanged state is a bug.
