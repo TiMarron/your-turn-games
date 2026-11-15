@@ -84,3 +84,19 @@ def test_multi_action_first_rejected_second_ok_is_valid():
         "'move_number':s['move_number'],'current_player':s['current_player']}\n"
     )
     assert validate(src) == []
+
+
+def test_nondeterministic_apply_action_reported():
+    src = GOOD.replace(
+        "def apply_action(state, player, action_type, data):\n",
+        "import random\ndef apply_action(state, player, action_type, data):\n",
+    ).replace(
+        "    s['move_number'] = state['move_number'] + 1\n",
+        "    s['move_number'] = state['move_number'] + 1\n    s['roll'] = random.random()\n",
+    )
+    assert src != GOOD
+    assert any("not deterministic" in p for p in validate(src))
+
+
+def test_good_reducer_still_valid():
+    assert validate(GOOD) == []
