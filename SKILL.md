@@ -92,4 +92,5 @@ Run it: `python -m harness --game games/coin`.
       two tabs and it reaches a `finished` state with the right winner.
 - [ ] `apply_action` raises on out-of-turn and on every illegal action.
 - [ ] `snapshot()` exposes no hidden info and includes the four required fields.
-- [ ] `game.json` is filled in (slug, title, players).
+- [ ] `game.json` is filled in (slug, title, players) and `authors` lists your
+      GitHub login (`python -m harness.authors --all` passes).
