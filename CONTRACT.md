@@ -25,6 +25,7 @@ def initialize_for_players(state: dict, n_players: int) -> dict: ...      # opti
   take now; return `{}` if they cannot act (not their turn / game over).
 - `apply_action` returns the **new** state, or **raises** on an illegal move
   (wrong turn, occupied cell, …). The platform maps the exception to HTTP 400.
+- `apply_action` must be **deterministic**: the same `state`, `player`, `action_type` and `data` always give the same result. The platform replays stored games move by move (history, analytics). Need randomness mid-game? Derive it from a seed kept in the state, e.g. `random.Random(f"{state['seed']}:{state['move_number']}")`, and set the seed in `new_game`/`initialize_for_players` (those may use any randomness — their result is stored). Don't expose the seed in `snapshot()`.
 - `snapshot` returns the **public** view sent to clients — never include hidden
   information (other players' secret state).
 - State must be **JSON-serializable** (dicts/lists/str/int/float/bool/None).

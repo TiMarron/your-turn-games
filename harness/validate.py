@@ -101,4 +101,60 @@ def validate(source: str) -> list[str]:
                 f"data={data!r}): {exc} — keys of legal_actions() must be action_types "
                 "that apply_action() accepts"
             )
+        return problems
+    problem = check_determinism(source, state)
+    if problem:
+        problems.append(problem)
     return problems
+
+
+def _seat_to_move(state: dict) -> int | None:
+    ptm = state.get("players_to_move")
+    if isinstance(ptm, list) and ptm:
+        return ptm[0]
+    seat = state.get("current_player", 0)
+    return None if seat == -1 else seat
+
+
+def check_determinism(source: str, state: dict, steps: int = 4) -> str | None:
+    """Play up to `steps` moves (first offered action each time), applying every
+    move twice in separate sandbox runs. The platform replays stored games move
+    by move, so apply_action must return the same result for the same input.
+    Mirrors the platform validator's probe."""
+    for step in range(1, steps + 1):
+        if state.get("phase") == "finished":
+            return None
+        seat = _seat_to_move(state)
+        if seat is None:
+            return None
+        try:
+            actions = run(source, "legal_actions", [state, seat])
+            if not isinstance(actions, dict) or not actions:
+                return None
+            action_type, entry = next(iter(actions.items()))
+            if isinstance(entry, list) and entry and isinstance(entry[0], dict):
+                data = entry[0]
+            elif isinstance(entry, dict):
+                data = entry
+            else:
+                data = {}
+            first = run(source, "apply_action", [state, seat, action_type, data])
+            second = run(source, "apply_action", [state, seat, action_type, data])
+        except (ReducerError, ReducerMissing, RunnerError):
+            return None  # contract problems are reported by validate()
+        if first != second:
+            if isinstance(first, dict) and isinstance(second, dict):
+                keys = sorted(
+                    k for k in first.keys() | second.keys() if first.get(k) != second.get(k)
+                )
+            else:
+                keys = ["<result>"]
+            return (
+                "apply_action is not deterministic: the same state and action gave "
+                f"different results at step {step} (fields: {', '.join(keys)}). "
+                "Use randomness only from a seed stored in the state."
+            )
+        if not isinstance(first, dict):
+            return None
+        state = first
+    return None
