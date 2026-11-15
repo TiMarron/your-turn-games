@@ -3,6 +3,9 @@
   "title": "My Game",
   "description": "Describe your game here.",
   "author": "your-name",
+  "authors": [
+    "your-github-login"
+  ],
   "min_players": 2,
   "max_players": 2
 }

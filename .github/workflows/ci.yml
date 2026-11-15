@@ -74,8 +74,30 @@ jobs:
             [ -f "$dir/$out/index.html" ] || { echo "build output '$out/index.html' missing"; exit 1; }
           done
 
+  # The PR author must be one of a game's authors (game.json `authors`, GitHub
+  # logins) on the base branch to change it; the repo owner may change any game.
+  # Author changes are printed as notices for review.
+  authors:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Every game lists valid authors
+        run: python -m harness.authors --all
+      - name: PR author is an author of every game the PR touches
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          OWNER: ${{ github.repository_owner }}
+        run: python -m harness.authors --base "origin/$BASE_REF" --pr-author "$PR_AUTHOR" --maintainer "$OWNER"
+
   notify-deploy:
-    needs: [harness-tests, validate-games]
+    needs: [harness-tests, validate-games, authors]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:

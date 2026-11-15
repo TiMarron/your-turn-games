@@ -54,10 +54,13 @@ fields; **enforcing** "not your turn" is the reducer's job (raise in
   "title": "Infinite Tic-Tac-Toe",
   "description": "One-line description.",
   "author": "your-name",
+  "authors": ["your-github-login"],
   "min_players": 2,
   "max_players": 2
 }
 ```
+
+`authors` — GitHub logins of the game's authors (required). They manage the game on the portal (visibility, testers, analytics) after linking GitHub in their profile. CI checks that a PR changing a game comes from one of its authors. A new game starts hidden from the catalog; its authors publish it in «Мои игры». `author` stays the display name.
 
 If your client needs a build step (a bundler, etc.), add an optional `"build"`
 object naming the command and its output directory:
