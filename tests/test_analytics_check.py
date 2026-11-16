@@ -75,3 +75,33 @@ def test_cli_exit_codes(tmp_path, capsys):
     assert main(["--analytics", "--game", str(bad)]) == 1
     none = make_game_dir(tmp_path / "c", analytics=None)
     assert main(["--analytics", "--game", str(none)]) == 2
+
+
+SIMULTANEOUS = (
+    "def new_game(config):\n"
+    "    return {'phase': 'playing', 'winner': None, 'move_number': 0,\n"
+    "            'players_to_move': [], 'done': [False, False]}\n"
+    "def legal_actions(state, player):\n"
+    "    if state['phase'] == 'finished' or state['done'][player]:\n"
+    "        return {}\n"
+    "    return {'commit': [{}]}\n"
+    "def apply_action(state, player, action_type, data):\n"
+    "    s = dict(state); s['done'] = list(state['done']); s['done'][player] = True\n"
+    "    s['move_number'] = state['move_number'] + 1\n"
+    "    if all(s['done']):\n"
+    "        s['phase'] = 'finished'; s['winner'] = 0\n"
+    "    return s\n"
+    "def snapshot(state):\n"
+    "    return dict(state)\n"
+)
+
+
+def test_empty_players_to_move_means_everyone_may_move():
+    initial, moves, final = random_playthrough(SIMULTANEOUS, 2, seed=1)
+    assert sorted(m[1] for m in moves) == [0, 1] and final["phase"] == "finished"
+
+
+def test_a_game_with_no_moves_played_is_a_problem(tmp_path):
+    stuck = TURN_REDUCER.replace("    return {'inc': [{}]}\n", "    return {}\n")
+    problems, _ = check_analytics(make_game_dir(tmp_path, engine=stuck))
+    assert any("no moves" in p for p in problems)

@@ -42,12 +42,14 @@ real.write(json.dumps(out))
 """
 
 
-def _seat_to_move(state: dict) -> int | None:
+def _seats_to_move(state: dict, n_players: int) -> list[int]:
+    """Seats that may act: players_to_move ([] = every seat, per CONTRACT.md),
+    else current_player (-1 = nobody)."""
     ptm = state.get("players_to_move")
     if isinstance(ptm, list):
-        return ptm[0] if ptm else None
+        return list(ptm) if ptm else list(range(n_players))
     seat = state.get("current_player", 0)
-    return None if seat == -1 else seat
+    return [] if seat == -1 else [seat]
 
 
 def _options(actions: dict) -> list[tuple[str, dict]]:
@@ -74,12 +76,14 @@ def random_playthrough(source: str, n_players: int, seed: int,
     initial = state
     moves: list[list] = []
     while len(moves) < max_moves and state.get("phase") != "finished":
-        seat = _seat_to_move(state)
-        if seat is None:
+        choices = []
+        for seat in _seats_to_move(state, n_players):
+            options = _options(run(source, "legal_actions", [state, seat]) or {})
+            if options:
+                choices.append((seat, options))
+        if not choices:
             break
-        options = _options(run(source, "legal_actions", [state, seat]) or {})
-        if not options:
-            break
+        seat, options = rng.choice(choices)
         action_type, data = rng.choice(options)
         state = run(source, "apply_action", [state, seat, action_type, data])
         moves.append([len(moves) + 1, seat, action_type, data])
@@ -107,6 +111,9 @@ def check_analytics(game_dir: Path, seed: int = 1, n_players: int | None = None,
         initial, moves, final = random_playthrough(engine, n, seed, max_moves)
     except (ReducerError, ReducerMissing, RunnerError) as exc:
         return [f"random game failed: {exc}"], None
+    if not moves:
+        return ["the random game played no moves (nobody had a legal action), so "
+                "on_step was never called; the portal analyses only games with moves"], None
 
     step_ctx = {"engine_version": f"{meta.get('game_type', game_dir.name)}@local",
                 "version": 0, "n_players": n}
