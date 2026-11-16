@@ -21,7 +21,9 @@ Follow [CONTRACT.md](CONTRACT.md) exactly. Then verify locally:
   `new_game`/`initialize_for_players`), e.g.
   `random.Random(f"{state['seed']}:{state['move_number']}")`; never put the seed
   in `snapshot()`. `--validate` probes the first moves for this.
-- Put hidden info in `state` but **omit it from `snapshot()`**.
+- Put hidden info in `state` but **omit it from `snapshot()`**. The snapshot is
+  the same for every viewer, and the platform's replay shows it after every
+  single move, so even a value that only changes by a hidden amount leaks.
 - `apply_action` must **raise** for any illegal action (wrong turn, taken cell,
   bad payload). Returning an unchanged state is a bug.
 - Always set `phase`, `winner`, `move_number`, `current_player` in both `state`
@@ -29,8 +31,10 @@ Follow [CONTRACT.md](CONTRACT.md) exactly. Then verify locally:
 - For the client, **copy `sdk/client.js`** into your bundle and use
   `connect({ onState })` + `game.sendAction(type, data)` instead of writing your
   own polling/WebSocket code. `onState(snapshot)` fires on every move (yours and
-  the opponent's) — render there. See `games/infinite-xo/client/` for a complete
-  example.
+  the opponent's) — render there. During a replay of past positions it is called
+  as `onState(snapshot, { replay: true })` and `sendAction` rejects: hide your
+  move controls while `replay` is true. See `games/infinite-xo/client/` for a
+  complete example.
 - A framework client (Vite/Vue/React/…) works the same way: build to static
   files, declare the build in `game.json` (`build.command` + `build.output`), and
   copy `sdk/client.js` into your source.

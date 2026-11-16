@@ -136,12 +136,23 @@ The client runs in an iframe and communicates two ways.
 
 ### postMessage (with the host page)
 
-- On load, the client posts (as a JSON **string**): `{"type":"ready"}`.
+- On load, the client posts (as a JSON **string**): `{"type":"ready"}`, or
+  `{"type":"ready","features":["replay"]}` if it supports replay (the SDK does).
 - The host replies: `{"type":"init","token":"<match token>","room_code":"<code>","api_base":"<origin>"}`.
 - The client may post `{"type":"game_ended","winner_seat":N}` (`-1` = draw) and
   `{"type":"navigate","path":"/somewhere"}`.
 - Because the iframe is sandboxed (opaque origin), post to the parent with
   `targetOrigin "*"`.
+- **Replay** (only if the client declared `"replay"`): the host lets the player
+  step through the game's past positions. It posts
+  `{"type":"replay_state","state":<snapshot>}` — show that position read-only:
+  no moves, no `game_ended` — and later `{"type":"replay_exit"}` — go back to
+  the newest live state. Live WebSocket updates keep arriving in between.
+  The `state` is the same platform snapshot as the HTTP state response, built
+  from your `snapshot()` after that move. **Your snapshot is shown to every
+  viewer after every single move**, so it must not hold private data, not even
+  indirectly (a count that drops by exactly what a face-down choice cost gives
+  that choice away).
 
 ### HTTP (with the platform API), using the token from `init`
 
@@ -179,6 +190,11 @@ You do not poll. Copy `sdk/client.js` into your client bundle and use it:
   state comes back through `onState` (via the WebSocket broadcast), so render only
   in `onState`.
 - The SDK notifies the host with `game_ended` when `phase` becomes `"finished"`.
+- The SDK supports replay: it declares `"replay"`, calls
+  `onState(snapshot, { replay: true })` for a past position, holds live updates
+  meanwhile and calls `onState(latest, { replay: false })` on exit. While
+  replaying `game.replay` is `true` and `game.sendAction` rejects — hide or
+  disable your move controls. `connect({ onState, replay: false })` opts out.
   The same `sdk.js` runs unchanged in the dev harness and on the platform (both
   serve the WebSocket at the same origin as `api_base`).
 

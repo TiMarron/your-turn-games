@@ -22,9 +22,10 @@
     const statusEl = document.getElementById("status");
     let game = null;
 
-    function render(snap) {
+    // opts.replay: the platform is showing a past position — no moves then.
+    function render(snap, opts = {}) {
       const finished = snap.phase === "finished";
-      const myTurn = !finished && snap.current_player === snap.your_seat;
+      const myTurn = !finished && !opts.replay && snap.current_player === snap.your_seat;
       goBtn.disabled = !myTurn || !game;
       statusEl.textContent = finished
         ? (snap.winner === snap.your_seat ? "You win!" : "Game over.")
