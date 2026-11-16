@@ -307,7 +307,8 @@
     return [Math.floor((px - (w / 2 - cwx * scale())) / s), Math.floor((py - (h / 2 - cwy * scale())) / s)];
   };
   const plural = (n, a, b, c) => { const m = n % 100, d = n % 10; return m > 10 && m < 20 ? c : d === 1 ? a : d > 1 && d < 5 ? b : c; };
-  const myTurn = () => !!snap && !!game && snap.phase !== "finished" && snap.current_player === snap.your_seat;
+  // game.replay: the platform is showing a past position — no moves then.
+  const myTurn = () => !!snap && !!game && !game.replay && snap.phase !== "finished" && snap.current_player === snap.your_seat;
   const NAMES = ["Крестики", "Нолики"];
   // Имя игрока приходит с платформы в snap.players; без него — «Игрок N».
   const playerName = (seat) => {
