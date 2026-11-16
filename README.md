@@ -11,7 +11,7 @@ itself stays dependency-free.
 CONTRACT.md          the game contract (read this)
 SKILL.md             authoring guide + worked example
 harness/             the local dev harness (stdlib only)
-template/            copy this to start a new game
+template/            copy this to start a new game (analytics.py is optional)
 games/infinite-xo/   reference game (engine.py + client/ + game.json)
 tests/               the harness's own tests (require pytest)
 ```
@@ -31,6 +31,7 @@ python -m harness --game games/infinite-xo
 cp -r template games/my-game
 # edit games/my-game/engine.py, client/index.html, game.json
 python -m harness --game games/my-game
+python -m harness --analytics --game games/my-game   # if you keep analytics.py
 ```
 
 On Windows use `xcopy /E /I template games\my-game` (or `Copy-Item -Recurse template games/my-game` in PowerShell).

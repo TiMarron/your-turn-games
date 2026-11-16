@@ -94,3 +94,6 @@ Run it: `python -m harness --game games/coin`.
 - [ ] `snapshot()` exposes no hidden info and includes the four required fields.
 - [ ] `game.json` is filled in (slug, title, players) and `authors` lists your
       GitHub login (`python -m harness.authors --all` passes).
+- [ ] Optional: `analytics.py` (start from `template/analytics.py`, see the
+      Analytics section of CONTRACT.md) passes
+      `python -m harness --analytics --game games/<slug>`.

@@ -8,7 +8,8 @@ A your-turn game is two parts:
    examples here are dependency-free HTML+JS). Runs in a **sandboxed iframe**
    (opaque origin) and talks to the platform over HTTP with a room-scoped token.
 
-Plus **`game.json`** — metadata.
+Plus **`game.json`** — metadata, and optionally **`analytics.py`** — see
+[Analytics](#analytics-analyticspy-optional).
 
 ## Reducer functions (`engine.py`)
 
@@ -83,6 +84,51 @@ object naming the command and its output directory:
   game directory and serve the `output` directory as the client bundle. Set your
   bundler's base path to relative (e.g. Vite `base: "./"`) so assets resolve when
   the bundle is served from a sub-path and inside the sandboxed iframe.
+
+## Analytics (`analytics.py`, optional)
+
+Put `analytics.py` next to `engine.py` to see how your game is played: the portal
+replays every finished game (at least one move; resigned and drawn games too)
+move by move and turns it into named events you explore in «Мои игры» → your
+game (count / sum / average / distribution, grouped and split by any field,
+filters, CSV export). Start from [`template/analytics.py`](template/analytics.py);
+[`games/infinite-xo/analytics.py`](games/infinite-xo/analytics.py) is a real example.
+
+```python
+def on_step(prev, player, action_type, data, next, ctx) -> list[dict]:
+    """Events of one move: [{"name": "plant_sold", "props": {...}}, ...]; [] for none."""
+
+def on_finish(final, ctx) -> list[dict]:
+    """Per-seat summaries: [{"seat": 0, "props": {...}}, ...] (at most one per seat)."""
+```
+
+Both are optional. `ctx` is `{"engine_version": "my-game@3", "version": 3,
+"n_players": 2, "memo": {}}`; `on_finish` also gets `"outcome"`
+(`"normal"`, `"resign"` or `"draw"`) and `"resigned_seat"` (seat or `None`).
+
+- **State**: `prev` / `next` / `final` are the full stored state, hidden fields
+  included (only you see aggregates of your own game). On `resign` / `draw` the
+  final state is not finished — read the outcome from `ctx`.
+- **Names**: event names and prop keys match `[a-z0-9_]{1,40}`. **Values**: str
+  (≤ 100 chars), int, float, bool or `None`; ≤ 20 props per event or summary;
+  ≤ 50 events per move and ≤ 20 000 per game.
+- **Added by the portal**: every event gets `seat` (who moved), `seat_won`,
+  `move_number`, `engine_version`, `n_players`; every summary gets `won`,
+  `engine_version`, `n_players`. These names (and `game`, `game_id`) are reserved
+  for props.
+- **`ctx["memo"]`**: a dict shared by every call of one game, empty at its start —
+  count in `on_step`, report in `on_finish`. It is the only argument you may change;
+  don't keep game data in module globals.
+- **Self-contained**: no I/O, no randomness, and don't import `engine.py` (each
+  game is replayed with its own engine version) — copy the helpers you need.
+- **Versions**: one analytics file serves games of every engine version; branch on
+  `ctx["version"]` when the state shape changed.
+- **Recompute**: a merged change to `analytics.py` alone (no new engine version)
+  is recomputed over all past games. Games whose replay does not reproduce the
+  stored state are `diverged`; games where your code raises or breaks the format
+  are `failed` — both are listed with the reason in «Мои игры».
+- **Check before you push**: `python -m harness --analytics --game games/<slug>`
+  plays a random game and runs your analytics over it (CI runs it too).
 
 ## Client protocol
 
