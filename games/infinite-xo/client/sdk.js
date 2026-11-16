@@ -24,6 +24,17 @@ export function connect({ onState, replay: replaySupported = true }) {
       if (typeof onState === "function") onState(snap, { replay: isReplay });
     };
 
+    // Tell the host the game finished (drives the platform's end overlay).
+    // Not for a past position: only live states, and only once.
+    const reportEnd = (m) => {
+      if (m.phase !== "finished" || endedSent) return;
+      endedSent = true;
+      window.parent.postMessage(JSON.stringify({
+        type: "game_ended",
+        winner_seat: m.winner === null ? -1 : m.winner,
+      }), "*");
+    };
+
     window.addEventListener("message", (e) => {
       let d = e.data;
       if (typeof d === "string") { try { d = JSON.parse(d); } catch { return; } }
@@ -36,7 +47,7 @@ export function connect({ onState, replay: replaySupported = true }) {
       if (replaySupported && d.type === "replay_exit") {
         if (!replay) return;
         replay = false;
-        if (live) show(live, false);
+        if (live) { show(live, false); reportEnd(live); }
         return;
       }
       if (d.type !== "init") return;
@@ -56,14 +67,7 @@ export function connect({ onState, replay: replaySupported = true }) {
         live = m;
         if (replay) return;       // shown when the host ends the replay
         show(m, false);
-        // Tell the host the game finished (drives the platform's end overlay).
-        if (m.phase === "finished" && !endedSent) {
-          endedSent = true;
-          window.parent.postMessage(JSON.stringify({
-            type: "game_ended",
-            winner_seat: m.winner === null ? -1 : m.winner,
-          }), "*");
-        }
+        reportEnd(m);
       });
 
       // Send a move over HTTP; the resulting state arrives via the WS push above.
