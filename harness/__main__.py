@@ -24,6 +24,14 @@ def main(argv=None) -> int:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--validate", action="store_true",
                         help="validate the reducer and exit (non-zero on problems)")
+    parser.add_argument("--analytics", action="store_true",
+                        help="run analytics.py over a random game and exit "
+                             "(0 ok, 1 problems, 2 no analytics.py)")
+    parser.add_argument("--seed", type=int, default=1, help="random game seed (--analytics)")
+    parser.add_argument("--players", type=int, default=None,
+                        help="players in the random game (--analytics; default max_players)")
+    parser.add_argument("--moves", type=int, default=300,
+                        help="move cap of the random game (--analytics)")
     parser.add_argument("--no-build", action="store_true",
                         help="serve the existing build output without rebuilding "
                              "(use after a build / alongside a framework watch server)")
@@ -39,6 +47,22 @@ def main(argv=None) -> int:
 
     source = engine_file.read_text(encoding="utf-8")
     metadata = json.loads(meta_file.read_text(encoding="utf-8"))
+
+    if args.analytics:
+        from harness.analytics_check import check_analytics, report
+        if not (game_dir / "analytics.py").exists():
+            print(f"error: no analytics.py in {game_dir}", file=sys.stderr)
+            return 2
+        problems, result = check_analytics(game_dir, seed=args.seed, n_players=args.players,
+                                           max_moves=args.moves)
+        if problems:
+            print("ANALYTICS FAILED:", file=sys.stderr)
+            for p in problems:
+                print(f"  - {p}", file=sys.stderr)
+            return 1
+        print(report(result))
+        print(f"OK: {metadata.get('title', game_dir.name)} analytics.py ran over a random game")
+        return 0
 
     if args.validate:
         from harness.validate import validate

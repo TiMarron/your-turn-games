@@ -55,6 +55,9 @@ jobs:
             [ -f "$dir/game.json" ] || continue
             echo "=== $dir ==="
             python -m harness --validate --game "$dir"
+            if [ -f "$dir/analytics.py" ]; then
+              python -m harness --analytics --game "$dir"
+            fi
 
             cmd=$(python -c "import json,sys; print(json.load(open(sys.argv[1])).get('build',{}).get('command',''))" "$dir/game.json")
             if [ -z "$cmd" ]; then
