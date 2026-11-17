@@ -11,9 +11,75 @@
 // updates meanwhile, and on exit calls onState(newest live, { replay: false }).
 // While replaying, sendAction rejects and `game.replay` is true — hide your
 // move controls. Pass { replay: false } to connect() to opt out.
+//
+// Reconnect: the WebSocket comes back by itself after a drop (growing pause
+// 1 s → 30 s), at once when the tab is visible again or the network returns,
+// and after 75 s of silence (the server pings idle sockets every 30 s). Every
+// connection starts with a fresh game_state, so missed moves arrive through
+// onState as usual. Don't open your own WebSocket next to the SDK.
+
+const RECONNECT_MIN_MS = 1000;
+const RECONNECT_MAX_MS = 30000;
+const SILENCE_LIMIT_MS = 75000;
+const FINAL_CLOSE_CODES = [4001, 4003, 4004];   // bad token / not a player / no room
+
+// Keep one live socket open to `url`, reconnecting as described above.
+function liveSocket(url, onMessage) {
+  let ws = null;
+  let delay = RECONNECT_MIN_MS;
+  let retryTimer = null;
+  let watchdogTimer = null;
+
+  const clearTimers = () => {
+    clearTimeout(retryTimer); clearTimeout(watchdogTimer);
+    retryTimer = watchdogTimer = null;
+  };
+  const armWatchdog = () => {
+    clearTimeout(watchdogTimer);
+    watchdogTimer = setTimeout(reconnectNow, SILENCE_LIMIT_MS);
+  };
+  const drop = () => {
+    clearTimers();
+    const sock = ws;
+    ws = null;
+    if (sock) {
+      sock.onopen = sock.onmessage = sock.onclose = sock.onerror = null;
+      try { sock.close(); } catch { /* already closed */ }
+    }
+  };
+  function open() {
+    drop();
+    const sock = new WebSocket(url);
+    ws = sock;
+    sock.onopen = () => { delay = RECONNECT_MIN_MS; armWatchdog(); };
+    sock.onmessage = (ev) => {
+      armWatchdog();
+      let m;
+      try { m = JSON.parse(ev.data); } catch { return; }
+      if (m && m.type !== "ping") onMessage(m);
+    };
+    sock.onclose = (ev) => {
+      if (ws !== sock) return;
+      ws = null;
+      clearTimers();
+      if (FINAL_CLOSE_CODES.includes(ev.code)) return;
+      retryTimer = setTimeout(open, delay);
+      delay = Math.min(delay * 2, RECONNECT_MAX_MS);
+    };
+  }
+  function reconnectNow() { delay = RECONNECT_MIN_MS; open(); }
+  const isDown = () => !ws || ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && isDown()) reconnectNow();
+  });
+  window.addEventListener("online", () => { if (isDown()) reconnectNow(); });
+  open();
+  return { get socket() { return ws; } };
+}
 
 export function connect({ onState, replay: replaySupported = true }) {
-  // Resolves once the host sends `init`. Returns { cfg, sendAction, ws, replay }.
+  // Resolves once the host sends `init`. Returns { cfg, sendAction, ws, replay }
+  // (`ws` is the current socket; it is replaced on every reconnect).
   return new Promise((resolve) => {
     let endedSent = false;
     let initialized = false;
@@ -56,13 +122,11 @@ export function connect({ onState, replay: replaySupported = true }) {
 
       const cfg = { token: d.token, room_code: d.room_code, api_base: d.api_base };
 
-      // Live updates over WebSocket (same-origin as api_base, http -> ws).
+      // Live updates over WebSocket (same-origin as api_base, http -> ws),
+      // reconnecting by itself after a drop.
       const wsUrl = cfg.api_base.replace(/^http/, "ws") +
         `/api/ws/${cfg.room_code}?token=${encodeURIComponent(cfg.token)}`;
-      const ws = new WebSocket(wsUrl);
-      ws.addEventListener("message", (ev) => {
-        let m;
-        try { m = JSON.parse(ev.data); } catch { return; }
+      const sock = liveSocket(wsUrl, (m) => {
         if (m.type !== "game_state") return;
         live = m;
         if (replay) return;       // shown when the host ends the replay
@@ -82,7 +146,7 @@ export function connect({ onState, replay: replaySupported = true }) {
           return r.json();
         });
 
-      resolve({ cfg, sendAction, ws, get replay() { return replay; } });
+      resolve({ cfg, sendAction, get ws() { return sock.socket; }, get replay() { return replay; } });
     });
 
     // Tell the host we're ready (targetOrigin '*' — sandboxed iframe is opaque-origin).

@@ -186,6 +186,13 @@ You do not poll. Copy `sdk/client.js` into your client bundle and use it:
 - `connect({ onState })` does the `ready`→`init` handshake, opens a WebSocket to
   `{api_base}/api/ws/{room}?token=…`, and calls `onState(snapshot)` on the initial
   state **and every opponent move** — no page refresh.
+- The SDK **reconnects by itself** when the socket drops (laptop sleep, network
+  switch, server restart): with a growing pause (1 s → 30 s), at once when the
+  tab is visible again or the network returns, and after 75 s of silence (the
+  platform pings idle sockets with `{"type":"ping"}` every 30 s; the SDK swallows
+  it). Every connection starts with a fresh `game_state`, so moves missed while
+  offline arrive through `onState` as usual. Don't open your own WebSocket next
+  to the SDK — a hand-rolled one that doesn't reconnect freezes the board.
 - `game.sendAction(type, data)` sends your move over `POST /action`; the resulting
   state comes back through `onState` (via the WebSocket broadcast), so render only
   in `onState`.
