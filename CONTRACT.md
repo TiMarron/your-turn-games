@@ -143,6 +143,15 @@ The client runs in an iframe and communicates two ways.
   `{"type":"navigate","path":"/somewhere"}`.
 - Because the iframe is sandboxed (opaque origin), post to the parent with
   `targetOrigin "*"`.
+- **Token refresh.** The match token expires (30 minutes), but a game may stay
+  open for hours. Before it expires the host posts
+  `{"type":"token","token":"<new match token>"}` — use it for every later HTTP
+  request and WebSocket connection (an open socket keeps working). Accept it
+  only from `window.parent` (`event.source`), and only after `init`. If the
+  platform still answers HTTP 401 or closes the socket with code `4001`, post
+  `{"type":"token_request"}` (as a JSON string, like `ready`); the host replies
+  with a `token` message. A 401 move was not applied, so it is safe to resend it
+  once with the new token. The SDK does all of this for you.
 - **Replay** (only if the client declared `"replay"`): the host lets the player
   step through the game's past positions. It posts
   `{"type":"replay_state","state":<snapshot>}` — show that position read-only:
@@ -193,6 +202,12 @@ You do not poll. Copy `sdk/client.js` into your client bundle and use it:
   it). Every connection starts with a fresh `game_state`, so moves missed while
   offline arrive through `onState` as usual. Don't open your own WebSocket next
   to the SDK — a hand-rolled one that doesn't reconnect freezes the board.
+  Close codes `4003` (not a player) and `4004` (no such room) stop it for good.
+- The SDK **keeps the token fresh**: it takes the host's `token` messages, and
+  on HTTP 401 or close code `4001` asks for a new one (`token_request`) and
+  retries — a move once, the socket as soon as the token arrives. No answer in
+  10 s: the move fails with the 401; three refusals in a row: the socket stops.
+  Making your own requests? Read `game.cfg.token` each time — it changes.
 - `game.sendAction(type, data)` sends your move over `POST /action`; the resulting
   state comes back through `onState` (via the WebSocket broadcast), so render only
   in `onState`.
