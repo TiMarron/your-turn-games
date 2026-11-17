@@ -13,10 +13,12 @@
 // move controls. Pass { replay: false } to connect() to opt out.
 //
 // Reconnect: the WebSocket comes back by itself after a drop (growing pause
-// 1 s → 30 s), at once when the tab is visible again or the network returns,
-// and after 75 s of silence (the server pings idle sockets every 30 s). Every
-// connection starts with a fresh game_state, so missed moves arrive through
-// onState as usual. Don't open your own WebSocket next to the SDK.
+// 1 s → 30 s with jitter, reset only once a message arrives), at once when the
+// tab is visible again or the network returns, and after 75 s of silence (the
+// server pings idle sockets every 30 s). Close codes 4001/4003/4004 are final:
+// it stops for good. Every connection starts with a fresh game_state, so missed
+// moves arrive through onState as usual. Don't open your own WebSocket next to
+// the SDK; read `game.ws` each time you need the socket (it changes on reconnect).
 
 const RECONNECT_MIN_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
@@ -26,6 +28,7 @@ const FINAL_CLOSE_CODES = [4001, 4003, 4004];   // bad token / not a player / no
 // Keep one live socket open to `url`, reconnecting as described above.
 function liveSocket(url, onMessage) {
   let ws = null;
+  let stopped = false;   // the server refused for good
   let delay = RECONNECT_MIN_MS;
   let retryTimer = null;
   let watchdogTimer = null;
@@ -48,11 +51,14 @@ function liveSocket(url, onMessage) {
     }
   };
   function open() {
+    if (stopped) return;
     drop();
     const sock = new WebSocket(url);
     ws = sock;
-    sock.onopen = () => { delay = RECONNECT_MIN_MS; armWatchdog(); };
+    armWatchdog();          // also bounds a handshake hanging on a half-dead network
+    sock.onopen = () => { armWatchdog(); };
     sock.onmessage = (ev) => {
+      delay = RECONNECT_MIN_MS;
       armWatchdog();
       let m;
       try { m = JSON.parse(ev.data); } catch { return; }
@@ -62,12 +68,12 @@ function liveSocket(url, onMessage) {
       if (ws !== sock) return;
       ws = null;
       clearTimers();
-      if (FINAL_CLOSE_CODES.includes(ev.code)) return;
-      retryTimer = setTimeout(open, delay);
+      if (FINAL_CLOSE_CODES.includes(ev.code)) { stopped = true; return; }
+      retryTimer = setTimeout(open, delay * (0.8 + Math.random() * 0.4));
       delay = Math.min(delay * 2, RECONNECT_MAX_MS);
     };
   }
-  function reconnectNow() { delay = RECONNECT_MIN_MS; open(); }
+  function reconnectNow() { if (stopped) return; delay = RECONNECT_MIN_MS; open(); }
   const isDown = () => !ws || ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED;
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && isDown()) reconnectNow();
