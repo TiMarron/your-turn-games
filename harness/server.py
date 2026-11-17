@@ -173,10 +173,13 @@ def make_app(harness: Harness) -> web.Application:
             await ws.send_json({"type": "game_state", **_base_state(harness, snap), "your_seat": seat})
 
             async def heartbeat():
-                while not ws.closed:
-                    await asyncio.sleep(HEARTBEAT_SECONDS)
-                    if not ws.closed:
-                        await ws.send_json({"type": "ping"})
+                try:
+                    while not ws.closed:
+                        await asyncio.sleep(HEARTBEAT_SECONDS)
+                        if not ws.closed:
+                            await ws.send_json({"type": "ping"})
+                except Exception:   # socket closed mid-send — the reader notices
+                    pass
 
             beat = asyncio.ensure_future(heartbeat())
             try:
