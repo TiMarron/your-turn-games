@@ -22,6 +22,11 @@ ROOM = "LOCAL"
 TOKEN_TTL_MINUTES = 30
 
 
+# Idle sockets get {"type": "ping"} this often, like the platform: the SDK
+# treats 75 s of silence as a dead link and reconnects.
+HEARTBEAT_SECONDS = 30
+
+
 @dataclass
 class Harness:
     source: str
@@ -166,8 +171,19 @@ def make_app(harness: Harness) -> web.Application:
             async with harness.lock:
                 snap = await _run(harness, "snapshot")
             await ws.send_json({"type": "game_state", **_base_state(harness, snap), "your_seat": seat})
-            async for _msg in ws:
-                pass
+
+            async def heartbeat():
+                while not ws.closed:
+                    await asyncio.sleep(HEARTBEAT_SECONDS)
+                    if not ws.closed:
+                        await ws.send_json({"type": "ping"})
+
+            beat = asyncio.ensure_future(heartbeat())
+            try:
+                async for _msg in ws:
+                    pass
+            finally:
+                beat.cancel()
         finally:
             harness.connections.pop(ws, None)
         return ws

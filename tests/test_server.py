@@ -125,3 +125,15 @@ async def test_ws_initial_state_and_live_broadcast(client):
 
     await ws0.close()
     await ws1.close()
+
+
+async def test_ws_sends_ping_when_idle(client, monkeypatch):
+    """Like the platform: an idle socket gets {"type":"ping"}, so the SDK's
+    silence watchdog doesn't reconnect every 75 s in the dev harness."""
+    from harness import server
+    monkeypatch.setattr(server, "HEARTBEAT_SECONDS", 0.2)
+    t0 = (await (await client.post("/api/games/LOCAL/match-token?seat=0")).json())["token"]
+    ws = await client.ws_connect(f"/api/ws/LOCAL?token={t0}")
+    assert (await ws.receive_json())["type"] == "game_state"
+    assert await ws.receive_json(timeout=5) == {"type": "ping"}
+    await ws.close()

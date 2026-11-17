@@ -30,7 +30,8 @@ Follow [CONTRACT.md](CONTRACT.md) exactly. Then verify locally:
   and `snapshot()`. Set `current_player = -1` when the game is finished.
 - For the client, **copy `sdk/client.js`** into your bundle and use
   `connect({ onState })` + `game.sendAction(type, data)` instead of writing your
-  own polling/WebSocket code. `onState(snapshot)` fires on every move (yours and
+  own polling/WebSocket code (the SDK reconnects after drops and catches up on
+  missed moves; a hand-rolled socket doesn't). `onState(snapshot)` fires on every move (yours and
   the opponent's) — render there. During a replay of past positions it is called
   as `onState(snapshot, { replay: true })` and `sendAction` rejects: hide your
   move controls while `replay` is true. See `games/infinite-xo/client/` for a
